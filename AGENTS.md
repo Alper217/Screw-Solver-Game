@@ -32,7 +32,13 @@
 - `Assets/InputSystem_Actions.inputactions` : Yeni Input System girdi haritaları ve eylemleri.
 
 ### Oynanış Çekirdeği (Gameplay)
-*(Geliştirildikçe buraya işlenecektir: Vida çıkarma mekaniği, delik/yuva eşleştirme, renk ve katman kontrolü)*
+- `Assets/_Project/Scripts/Core/ColorType.cs` : Renk tanımları ve URP RGBA renk dönüştürücüleri.
+- `Assets/_Project/Scripts/Core/ReservationResult.cs` : Tıklama anında sıfır gecikmeli hedef kutu / buffer rezervasyon sonucunu taşıyan 0 GC veri yapısı.
+- `Assets/_Project/Scripts/Core/BoxData.cs` : Tek bir aktif hedef kutusunun 3 vida kapasitesini, rengini ve doluluk durumunu yöneten veri modeli.
+- `Assets/_Project/Scripts/Core/BufferDrainResult.cs` : Kutu tamamlandığında bekleme barından yeni kutuya otomatik aktarılan vida bilgilerini tutar.
+- `Assets/_Project/Scripts/Core/PuzzleInventoryModel.cs` : Saf C# envanter beyni (4 aktif kutu, kutu kuyruğu, 5'li bekleme barı, otomatik eşleşme, Game Over ve Win kontrolleri).
+- `Assets/_Project/Scripts/Editor/TestRunners/InventoryTestRunner.cs` : Unity üst menüsünden (`ScrewSolver > Run Core Inventory Tests`) tek tıkla envanter mantığını doğrulayan test aracı.
+- `Assets/_Project/Scripts/Tests/Editor/PuzzleInventoryTests.cs` : NUnit tabanlı envanter birim testleri (kutu rezervasyonu, buffer doluluğu, zincirleme çekim).
 
 ### UI & Seviye Yönetimi (UI & Level Management)
 *(Geliştirildikçe buraya işlenecektir: Seviye yükleyici, can/hamle sayacı, başarı popupları)*
