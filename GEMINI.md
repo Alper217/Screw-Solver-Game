@@ -23,6 +23,9 @@
 ### Proje Yapısı & Konfigürasyon
 - `.gitignore` : Unity 6, URP, IDE ve sistem önbelleklerini (Library, Temp, obj vb.) hariç tutan Git kuralları.
 - `TECHNICAL_PLAN.md` : Tartışma sonucu netleşen 5 temel mimari karar, SOLID sınıf yapısı ve faz planı.
+- `Assets/Plugins/Demigiant/DOTween/` : DOTween animasyon kütüphanesi ve modülleri.
+- `Assets/Prefabs/FBX/Screw+Phillips.fbx` : Vida 3D modeli (Phillips başlık, dişli mil).
+- `Assets/Prefabs/FBX/TargetBox.fbx` : Hedef kutu / soket tabanı 3D modeli.
 - `ProjectSettings/ProjectSettings.asset` : Unity proje, oynatıcı ve platform ayarları.
 - `Packages/manifest.json` : Projeye dahil olan Unity paket bağımlılıkları (URP, Input System vb.).
 - `Assets/Scenes/SampleScene.unity` : Varsayılan çalışma sahnesi.
