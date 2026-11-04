@@ -32,6 +32,10 @@
 - `Assets/InputSystem_Actions.inputactions` : Yeni Input System girdi haritaları ve eylemleri.
 
 ### Oynanış Çekirdeği (Gameplay)
+- `Assets/_Project/Scripts/Config/ScrewAnimationConfigSO.cs` : DOTween süreleri, kavis yüksekliği ve hız çarpanını yöneten ayar ScriptableObject'i.
+- `Assets/_Project/Scripts/Gameplay/Plates/PlateObject.cs` : Plaka referans sayacı (`_remainingScrewsCount`), uyku modunda `isKinematic` fizik ve anlık düşüş mantığı.
+- `Assets/_Project/Scripts/Gameplay/Screws/ScrewObject.cs` : 3D vida nesnesi, kilit engel kontrolü (`_blockingCount`), renk renklendirmesi ve DOTween sökülme/uçuş sekansları.
+- `Assets/_Project/Scripts/Gameplay/Input/ScrewInputController.cs` : New Input System (Touch/Mouse) ve `Physics.RaycastNonAlloc` ile 0 GC vida dokunma dinleyicisi.
 - `Assets/_Project/Scripts/Core/ColorType.cs` : Renk tanımları ve URP RGBA renk dönüştürücüleri.
 - `Assets/_Project/Scripts/Core/ReservationResult.cs` : Tıklama anında sıfır gecikmeli hedef kutu / buffer rezervasyon sonucunu taşıyan 0 GC veri yapısı.
 - `Assets/_Project/Scripts/Core/BoxData.cs` : Tek bir aktif hedef kutusunun 3 vida kapasitesini, rengini ve doluluk durumunu yöneten veri modeli.
