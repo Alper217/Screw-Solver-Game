@@ -22,6 +22,7 @@
 
 ### Proje Yapısı & Konfigürasyon
 - `.gitignore` : Unity 6, URP, IDE ve sistem önbelleklerini (Library, Temp, obj vb.) hariç tutan Git kuralları.
+- `TECHNICAL_PLAN.md` : Tartışma sonucu netleşen 5 temel mimari karar, SOLID sınıf yapısı ve faz planı.
 - `ProjectSettings/ProjectSettings.asset` : Unity proje, oynatıcı ve platform ayarları.
 - `Packages/manifest.json` : Projeye dahil olan Unity paket bağımlılıkları (URP, Input System vb.).
 - `Assets/Scenes/SampleScene.unity` : Varsayılan çalışma sahnesi.
@@ -37,6 +38,9 @@
 
 # 3. ÖĞRENİLEN MİMARİ NOTLAR (QUICK CACHE)
 - Proje Unity 6 ve URP ile çalışmaktadır.
-- Yeni eklenen mekaniklerde Input System eylemleri baz alınacaktır.
-- Kod geliştirmelerinde kör tarama yapılmayacak, bu dosyadaki harita tek gerçeklik kaynağı (single source of truth) olarak kullanılacaktır.
+- Blocker Detection: Runtime PhysX raycast yerine integer bağımlılık sayacı (`blockingCount`) kullanılır (0 GC, 0 PhysX maliyeti).
+- Fizik Stratejisi: Plakalar düşene kadar `isKinematic = true` uyku modundadır; yalnızca tüm vidaları sökülen plaka anlık serbest düşer.
+- Akış & Rezervasyon: Tıklama anında mantıksal slot rezervasyonu yapılır (0 gecikme), görsel animasyonlar maks 3 eşzamanlı kuyrukla yürütülür.
+- Animasyonlar: DOTween altyapısı ve `ScrewAnimationConfigSO` ile dinamik hız ayarı.
+- Çözülebilirlik: Color Sort Game benzeri headless simulator bot ile seviye optimizasyonu.
 
