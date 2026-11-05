@@ -12,10 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c8eda93fa473fae4583a814ce3fd6552, type: 3}
   m_Name: ScrewAnimationConfig
   m_EditorClassIdentifier: Assembly-CSharp::ScrewSolver.Config.ScrewAnimationConfigSO
-  _unscrewDuration: 0.2
-  _unscrewLiftDistance: 0.2
+  _unscrewDuration: 0.35
+  _unscrewLiftDistance: 0.28
   _unscrewRotationDegrees: 720
-  _flyDuration: 0.35
+  _flyDuration: 0.4
   _arcHeight: 0.35
   _wiggleDuration: 0.2
   _wiggleStrength: 12

@@ -113,6 +113,19 @@ namespace ScrewSolver.Gameplay.Screws
         }
 
         /// <summary>
+        /// Üstünü örten bir plaka düştüğünde bu vidanın engel sayacını düşürür ve kilidini açar.
+        /// </summary>
+        public void Unblock(PlateObject plate)
+        {
+            if (plate != null && _blockingPlates.Contains(plate))
+            {
+                _blockingPlates.Remove(plate);
+            }
+
+            _blockingCount = Mathf.Max(0, _blockingCount - 1);
+        }
+
+        /// <summary>
         /// Plays a fast, juicy wiggle/shake animation when the player taps a blocked screw.
         /// </summary>
         public void PlayWiggleLockedAnimation()
@@ -160,13 +173,22 @@ namespace ScrewSolver.Gameplay.Screws
             _activeSequence?.Kill();
             _activeSequence = DOTween.Sequence();
 
+            // Vidanın altındaki siyah delik yuvasını (HoleBezel / ScrewHole) gövde veya plaka üzerinde bırak!
+            // Böylece vida uçup kutuya gittiğinde delik yüzeyde kalır ve vidanın arkasından uçmaz.
+            Transform holeTransform = transform.Find("HoleBezel") ?? transform.Find("ScrewHole");
+            if (holeTransform != null)
+            {
+                holeTransform.SetParent(transform.parent, true);
+            }
+
             // Detach from parent plate so the plate falling doesn't drag the flying screw with it
             transform.SetParent(null, true);
 
-            // 1. Unscrew phase: rotate and lift straight up out of the hole
-            Vector3 liftPosition = transform.position + transform.up * liftDist;
+            // 1. Unscrew phase: Vidanın kendi şaft ekseni (forward) boyunca dönerek delikten dışarı çıkması
+            Vector3 surfaceNormal = transform.forward;
+            Vector3 liftPosition = transform.position + surfaceNormal * liftDist;
             _activeSequence.Append(transform.DOMove(liftPosition, unscrewTime).SetEase(Ease.OutCubic));
-            _activeSequence.Join(transform.DORotate(new Vector3(0f, rotDegrees, 0f), unscrewTime, RotateMode.WorldAxisAdd).SetEase(Ease.Linear));
+            _activeSequence.Join(transform.DORotate(new Vector3(0f, 0f, -rotDegrees), unscrewTime, RotateMode.LocalAxisAdd).SetEase(Ease.OutCubic));
 
             // Notify parent plate right when the screw exits the hole
             _activeSequence.AppendCallback(() =>
@@ -177,8 +199,7 @@ namespace ScrewSolver.Gameplay.Screws
                 }
             });
 
-            // 2. Flight phase: parabolic jump to destination AND smoothly straighten rotation to match target box!
-            // Akıllı kavis: Hedef kutu yukarıdaysa, kavisin kutunun ve ekranın üstünden dışarı taşmasını engeller
+            // 2. Flight phase: Objenin içinden geçmeden, yüzeyden dışarı ve yukarı doğru tatlı bir kavisle hedefe uçuş
             float yDiff = targetWorldPosition.y - liftPosition.y;
             float arcHeight = rawArc;
             if (yDiff > 0f)
@@ -186,7 +207,11 @@ namespace ScrewSolver.Gameplay.Screws
                 arcHeight = Mathf.Min(rawArc, Mathf.Max(0.12f, yDiff * 0.30f));
             }
 
-            _activeSequence.Append(transform.DOJump(targetWorldPosition, arcHeight, 1, flyTime).SetEase(Ease.OutQuad));
+            Vector3 midPoint = Vector3.Lerp(liftPosition, targetWorldPosition, 0.40f);
+            midPoint += surfaceNormal * 0.25f + Vector3.up * arcHeight;
+
+            Vector3[] flightPath = new Vector3[] { midPoint, targetWorldPosition };
+            _activeSequence.Append(transform.DOPath(flightPath, flyTime, PathType.CatmullRom).SetEase(Ease.InOutQuad));
             _activeSequence.Join(transform.DORotateQuaternion(targetWorldRotation, flyTime).SetEase(Ease.OutQuad));
 
             // 3. Arrival

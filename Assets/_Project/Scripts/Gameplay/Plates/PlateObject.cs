@@ -24,6 +24,10 @@ namespace ScrewSolver.Gameplay.Plates
         [Tooltip("Bu plakayı sabitleyen vidaların listesi")]
         [SerializeField] private List<ScrewObject> _attachedScrews = new();
 
+        [Header("Covered Screws (Bu Plakanın Üstünü Örttüğü Vidalar)")]
+        [Tooltip("Bu plakanın altında kalan ve plaka düşünce açılacak vidalar")]
+        [SerializeField] private List<ScrewObject> _coveredScrews = new();
+
         [Header("Fall & Physics Settings")]
         [Tooltip("Son vida söküldükten sonra düşüş başlamadan önceki ufak gecikme")]
         [SerializeField, Range(0f, 0.5f)] private float _fallDelay = 0.04f;
@@ -100,16 +104,32 @@ namespace ScrewSolver.Gameplay.Plates
                 yield return new WaitForSeconds(_fallDelay);
             }
 
-            // Notify dependent screws that this plate is falling (decrements their blockingCount)
-            OnPlateFell?.Invoke(this);
+            // 1. PuzzleRoot'tan ayır (oyuncu modeli döndürürken düşen parça havada garip dönmesin)
+            transform.SetParent(null, true);
 
-            // Enable gravity and dynamic physics
+            // 2. MeshCollider kullanılıyorsa PhysX hatasını önlemek için convex yap
+            if (_collider is MeshCollider mc && !mc.convex)
+            {
+                mc.convex = true;
+            }
+
+            // 3. Altında kilitlediği vidalara haber ver ve kilitlerini aç
+            OnPlateFell?.Invoke(this);
+            foreach (var screw in _coveredScrews)
+            {
+                if (screw != null)
+                {
+                    screw.Unblock(this);
+                }
+            }
+
+            // 4. Dinamik fiziği aktifleştir (yerçekimi ve serbest düşüş)
             if (_rigidbody != null)
             {
                 _rigidbody.isKinematic = false;
                 _rigidbody.useGravity = true;
 
-                // Add slight juicy torque for natural tumbling
+                // Doğal bir takla hissi için hafif rastgele tork ve aşağı itiş
                 Vector3 randomTorque = new Vector3(
                     UnityEngine.Random.Range(-1f, 1f),
                     UnityEngine.Random.Range(-0.5f, 0.5f),
@@ -117,6 +137,7 @@ namespace ScrewSolver.Gameplay.Plates
                 ).normalized * _randomTorqueStrength;
 
                 _rigidbody.AddTorque(randomTorque, ForceMode.Impulse);
+                _rigidbody.AddForce(Vector3.down * 1.5f, ForceMode.Impulse);
             }
 
             // Monitor fall until below threshold
@@ -139,6 +160,32 @@ namespace ScrewSolver.Gameplay.Plates
                 if (!_attachedScrews.Contains(screw))
                 {
                     _attachedScrews.Add(screw);
+                }
+            }
+        }
+
+        [ContextMenu("Vidaların Altına Otomatik Delik (Hole) Yerleştir")]
+        public void GenerateHolesUnderScrews()
+        {
+            AutoFindAttachedScrews();
+
+            for (int i = 0; i < _attachedScrews.Count; i++)
+            {
+                ScrewObject screw = _attachedScrews[i];
+                if (screw == null) continue;
+
+                string holeName = $"Hole_{screw.name}";
+                Transform existingHole = transform.Find(holeName);
+                if (existingHole == null)
+                {
+                    GameObject holeObj = new GameObject(holeName);
+                    holeObj.transform.SetParent(transform, true);
+                    holeObj.transform.position = screw.transform.position;
+                    holeObj.transform.rotation = screw.transform.rotation;
+                    holeObj.transform.localScale = Vector3.one;
+
+                    ScrewHole hole = holeObj.AddComponent<ScrewHole>();
+                    hole.SetupVisual();
                 }
             }
         }

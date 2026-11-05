@@ -27,6 +27,18 @@ namespace ScrewSolver.Gameplay.Controllers
 
         public event Action OnLevelCompleted;
 
+        /// <summary>
+        /// BoxQueueManager gibi dinamik kuyruk yöneticileri tarafından aktif kutuları senkronize etmek için çağrılır.
+        /// </summary>
+        public void UpdateActiveBoxes(List<ColorBox> boxes)
+        {
+            _activeBoxes.Clear();
+            if (boxes != null)
+            {
+                _activeBoxes.AddRange(boxes);
+            }
+        }
+
         private readonly RaycastHit[] _hitBuffer = new RaycastHit[4];
         private int _totalBoxesCount;
         private int _completedBoxesCount;

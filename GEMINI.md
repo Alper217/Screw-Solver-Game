@@ -35,11 +35,14 @@
 - `Assets/_Project/Scripts/Core/ColorType.cs` : Renk tanımları ve URP RGBA renk dönüştürücüleri (`ToUnityColor()`).
 - `Assets/_Project/Scripts/Config/ScrewAnimationConfigSO.cs` : DOTween süreleri, kavis yüksekliği ve hız çarpanını yöneten ayar ScriptableObject'i.
 - `Assets/_Project/Scripts/Gameplay/Camera/MobileCameraFitter.cs` : 1080x1920 (9:16) mobil dikey ekran koruyucusu; farklı ekran oranlarında FOV'u dinamik hesaplar.
-- `Assets/_Project/Scripts/Gameplay/Plates/PlateObject.cs` : Plaka referans sayacı (`_remainingScrewsCount`), uyku modunda `isKinematic` fizik ve tüm vidalar sökülünce serbest düşüş mantığı.
-- `Assets/_Project/Scripts/Gameplay/Screws/ScrewObject.cs` : 3D vida nesnesi, kilit engel kontrolü (`_blockingCount`), `ParentPlate` ve `BlockingPlates` erişimcileri, otomatik yıldız gölgelendirmesi, ekran dışına taşmayı önleyen akıllı kavis sınırlayıcılı DOTween sekansları.
+- `Assets/_Project/Scripts/Gameplay/Plates/PlateObject.cs` : Sökülebilir parça/plaka mantığı; bağlı vidalar sökülünce isKinematic=false, PuzzleRoot'tan ayrılarak doğal torkla serbest düşüş ve altındaki vidaları (`_coveredScrews`) otomatik açma.
+- `Assets/_Project/Scripts/Gameplay/Plates/ScrewHole.cs` : Plaka/gövde üzerindeki vida delik soketi; procedural çift yüzlü pul mesh ve `HoleDark.mat` kullanımı.
+- `Assets/_Project/Scripts/Gameplay/Screws/ScrewObject.cs` : 3D vida nesnesi, kilit engel kontrolü (`_blockingCount`), saf ve bağımsız vida mantığı; kendi ekseninde dönerek delikten dışarı çıkış (`transform.forward`), modelin içinden geçmeyi önleyen Catmull-Rom spline uçuşu ve yüzeyde siyah delik bırakma (`HoleBezel`).
 - `Assets/_Project/Scripts/Gameplay/Controllers/PuzzleRotator.cs` : Ortadaki bulmaca modelini (`PuzzleRoot`) parmak veya fare sürüklemesiyle kameraya göre 360° serbestçe döndüren, tatlı ataletli (inertia) hafif kontrolcü.
 - `Assets/_Project/Scripts/Gameplay/Boxes/ColorBox.cs` : Manuel soket (Slot_1, Slot_2...) yönetimi; deliklerin tam konumlandırılması için Gizmos ile Editör/Prefab modunda tam dik (0° açı) ve gümüş/gri tonlu gerçek zamanlı hayalet vida önizlemesi (Ghost Screw Preview) çizer.
+- `Assets/_Project/Scripts/Gameplay/Boxes/BoxQueueManager.cs` : Seviye kutu kuyruğunu (örn: 11 kutu) ekrandaki 3 sabit slota sırayla akıtan, `Ease.OutBack` iniş animasyonlu ve `UpdateActiveBoxes` senkronizasyonlu yöneticisi.
 - `Assets/_Project/Scripts/Gameplay/Controllers/ScrewManager.cs` : Dokunulan vidayı raycast ile yakalayıp uygun renk kutusuna uçuran ve tüm kutular dolunca seviye zaferini (Win) tetikleyen ana oyun döngüsü köprüsü.
+- `Assets/_Project/Scripts/Editor/ScrewHoleTool.cs` : `Screw.prefab` ve sahnedeki tüm vidalara otomatik olarak URP Unlit simsiyah ve vidanın başlığına/yüzeyine tam paralel (localPosition = (0, 0, 0.107f)) vida yuvalarını (`HoleBezel`) yerleştiren editör aracı.
 
 ### UI & Seviye Yönetimi (UI & Level Management)
 *(Yeni temiz mimari adımlarıyla birlikte buraya işlenecektir)*
