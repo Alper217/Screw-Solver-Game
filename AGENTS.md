@@ -32,20 +32,17 @@
 - `Assets/InputSystem_Actions.inputactions` : Yeni Input System girdi haritaları ve eylemleri.
 
 ### Oynanış Çekirdeği (Gameplay)
+- `Assets/_Project/Scripts/Core/ColorType.cs` : Renk tanımları ve URP RGBA renk dönüştürücüleri (`ToUnityColor()`).
 - `Assets/_Project/Scripts/Config/ScrewAnimationConfigSO.cs` : DOTween süreleri, kavis yüksekliği ve hız çarpanını yöneten ayar ScriptableObject'i.
-- `Assets/_Project/Scripts/Gameplay/Plates/PlateObject.cs` : Plaka referans sayacı (`_remainingScrewsCount`), uyku modunda `isKinematic` fizik ve anlık düşüş mantığı.
-- `Assets/_Project/Scripts/Gameplay/Screws/ScrewObject.cs` : 3D vida nesnesi, kilit engel kontrolü (`_blockingCount`), renk renklendirmesi ve DOTween sökülme/uçuş sekansları.
-- `Assets/_Project/Scripts/Gameplay/Input/ScrewInputController.cs` : New Input System (Touch/Mouse) ve `Physics.RaycastNonAlloc` ile 0 GC vida dokunma dinleyicisi.
-- `Assets/_Project/Scripts/Core/ColorType.cs` : Renk tanımları ve URP RGBA renk dönüştürücüleri.
-- `Assets/_Project/Scripts/Core/ReservationResult.cs` : Tıklama anında sıfır gecikmeli hedef kutu / buffer rezervasyon sonucunu taşıyan 0 GC veri yapısı.
-- `Assets/_Project/Scripts/Core/BoxData.cs` : Tek bir aktif hedef kutusunun 3 vida kapasitesini, rengini ve doluluk durumunu yöneten veri modeli.
-- `Assets/_Project/Scripts/Core/BufferDrainResult.cs` : Kutu tamamlandığında bekleme barından yeni kutuya otomatik aktarılan vida bilgilerini tutar.
-- `Assets/_Project/Scripts/Core/PuzzleInventoryModel.cs` : Saf C# envanter beyni (4 aktif kutu, kutu kuyruğu, 5'li bekleme barı, otomatik eşleşme, Game Over ve Win kontrolleri).
-- `Assets/_Project/Scripts/Editor/TestRunners/InventoryTestRunner.cs` : Unity üst menüsünden (`ScrewSolver > Run Core Inventory Tests`) tek tıkla envanter mantığını doğrulayan test aracı.
-- `Assets/_Project/Scripts/Tests/Editor/PuzzleInventoryTests.cs` : NUnit tabanlı envanter birim testleri (kutu rezervasyonu, buffer doluluğu, zincirleme çekim).
+- `Assets/_Project/Scripts/Gameplay/Camera/MobileCameraFitter.cs` : 1080x1920 (9:16) mobil dikey ekran koruyucusu; farklı ekran oranlarında FOV'u dinamik hesaplar.
+- `Assets/_Project/Scripts/Gameplay/Plates/PlateObject.cs` : Plaka referans sayacı (`_remainingScrewsCount`), uyku modunda `isKinematic` fizik ve tüm vidalar sökülünce serbest düşüş mantığı.
+- `Assets/_Project/Scripts/Gameplay/Screws/ScrewObject.cs` : 3D vida nesnesi, kilit engel kontrolü (`_blockingCount`), `ParentPlate` ve `BlockingPlates` erişimcileri, otomatik yıldız gölgelendirmesi, ekran dışına taşmayı önleyen akıllı kavis sınırlayıcılı DOTween sekansları.
+- `Assets/_Project/Scripts/Gameplay/Controllers/PuzzleRotator.cs` : Ortadaki bulmaca modelini (`PuzzleRoot`) parmak veya fare sürüklemesiyle kameraya göre 360° serbestçe döndüren, tatlı ataletli (inertia) hafif kontrolcü.
+- `Assets/_Project/Scripts/Gameplay/Boxes/ColorBox.cs` : Manuel soket (Slot_1, Slot_2...) yönetimi; deliklerin tam konumlandırılması için Gizmos ile Editör/Prefab modunda tam dik (0° açı) ve gümüş/gri tonlu gerçek zamanlı hayalet vida önizlemesi (Ghost Screw Preview) çizer.
+- `Assets/_Project/Scripts/Gameplay/Controllers/ScrewManager.cs` : Dokunulan vidayı raycast ile yakalayıp uygun renk kutusuna uçuran ve tüm kutular dolunca seviye zaferini (Win) tetikleyen ana oyun döngüsü köprüsü.
 
 ### UI & Seviye Yönetimi (UI & Level Management)
-*(Geliştirildikçe buraya işlenecektir: Seviye yükleyici, can/hamle sayacı, başarı popupları)*
+*(Yeni temiz mimari adımlarıyla birlikte buraya işlenecektir)*
 
 ---
 

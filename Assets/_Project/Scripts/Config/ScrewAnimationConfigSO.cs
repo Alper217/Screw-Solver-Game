@@ -6,25 +6,25 @@ namespace ScrewSolver.Config
     /// Central ScriptableObject holding animation timing and curve parameters.
     /// Can be tuned in the Inspector in real-time during playtests.
     /// </summary>
-    [CreateAssetMenu(fileName = "ScrewAnimationConfig", menuName = "ScrewSolver/Animation Config", priority = 1)]
+    [CreateAssetMenu(fileName = "ScrewAnimationConfig", menuName = "ScrewSolver/Animation Config", order = 1)]
     public sealed class ScrewAnimationConfigSO : ScriptableObject
     {
         [Header("Unscrew Settings (Delikten Çıkış)")]
         [Tooltip("Vidanın delikten dönerek yukarı çıkma süresi (saniye)")]
-        [SerializeField, Range(0.05f, 1.0f)] private float _unscrewDuration = 0.22f;
+        [SerializeField, Range(0.05f, 1.0f)] private float _unscrewDuration = 0.20f;
 
         [Tooltip("Delikten yukarı çıkış mesafesi (yerel Y ekseni)")]
-        [SerializeField, Range(0.1f, 2.0f)] private float _unscrewLiftDistance = 0.5f;
+        [SerializeField, Range(0.05f, 1.0f)] private float _unscrewLiftDistance = 0.20f;
 
         [Tooltip("Dönüş açısı (derece - 360 = 1 tam tur)")]
         [SerializeField, Range(180f, 1440f)] private float _unscrewRotationDegrees = 720f;
 
         [Header("Flight Settings (Kutuya / Bar'a Uçuş)")]
         [Tooltip("Vidanın delikten hedefe parabolik uçuş süresi (saniye)")]
-        [SerializeField, Range(0.1f, 1.5f)] private float _flyDuration = 0.38f;
+        [SerializeField, Range(0.1f, 1.5f)] private float _flyDuration = 0.35f;
 
-        [Tooltip("Uçuş sırasındaki parabolik kavis yüksekliği")]
-        [SerializeField, Range(0.2f, 5.0f)] private float _arcHeight = 1.8f;
+        [Tooltip("Uçuş sırasındaki parabolik kavis yüksekliği (0.25 - 0.40 idealdir, ekran dışına taşmaz)")]
+        [SerializeField, Range(0.05f, 2.0f)] private float _arcHeight = 0.35f;
 
         [Header("Locked Wiggle Settings (Kilitli Vida Geri Bildirimi)")]
         [Tooltip("Kilitli vidaya tıklandığında titreme süresi")]
@@ -50,3 +50,4 @@ namespace ScrewSolver.Config
         public float GlobalSpeedMultiplier => _globalSpeedMultiplier;
     }
 }
+
