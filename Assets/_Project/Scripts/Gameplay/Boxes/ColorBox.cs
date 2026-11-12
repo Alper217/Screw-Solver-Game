@@ -83,8 +83,29 @@ namespace ScrewSolver.Gameplay.Boxes
         {
             _initialLocalPos = transform.localPosition;
             if (_boxRenderer == null) _boxRenderer = GetComponentInChildren<Renderer>();
-            ApplyColor();
             CleanNullSockets();
+
+            // Soket sayısı varsa kapasiteyi daima soket sayısına eşitle (Örn: 4 soket = 4 kapasite)
+            if (_screwSockets != null && _screwSockets.Count > 0)
+            {
+                _capacity = _screwSockets.Count;
+            }
+
+            ApplyColor();
+            DisableShadows();
+        }
+
+        private void DisableShadows()
+        {
+            Renderer[] rends = GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < rends.Length; i++)
+            {
+                if (rends[i] != null)
+                {
+                    rends[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    rends[i].receiveShadows = false;
+                }
+            }
         }
 
         private void OnValidate()
@@ -149,12 +170,14 @@ namespace ScrewSolver.Gameplay.Boxes
         public void RefreshColorVisual()
         {
             ApplyColor();
+            DisableShadows();
         }
 
         public void SetColor(ColorType newColor)
         {
             _boxColor = newColor;
             ApplyColor();
+            DisableShadows();
         }
 
         private void ApplyColor()
@@ -215,7 +238,14 @@ namespace ScrewSolver.Gameplay.Boxes
         {
             Sequence seq = DOTween.Sequence();
             seq.Append(transform.DOPunchScale(Vector3.one * 0.15f, 0.25f, 10, 0.6f));
-            seq.Append(transform.DOLocalMoveY(_initialLocalPos.y + 3f, 0.45f).SetEase(Ease.InBack));
+
+            // Ekranda/kamerada daima yukarı doğru uçarak ayrılsın (rotasyondan bağımsız dünya uzayı)
+            Vector3 flyUpDir = Vector3.up;
+            if (Camera.main != null)
+            {
+                flyUpDir = Camera.main.transform.up;
+            }
+            seq.Append(transform.DOMove(transform.position + flyUpDir * 1.8f, 0.45f).SetEase(Ease.InBack));
             seq.OnComplete(() =>
             {
                 gameObject.SetActive(false);

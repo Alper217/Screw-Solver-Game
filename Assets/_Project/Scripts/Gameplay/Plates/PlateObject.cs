@@ -36,7 +36,10 @@ namespace ScrewSolver.Gameplay.Plates
         [SerializeField] private float _destroyBelowY = -15f;
 
         [Tooltip("Düşerken hafif rastgele dönme torku")]
-        [SerializeField] private float _randomTorqueStrength = 5f;
+        [SerializeField, Range(1f, 10f)] private float _randomTorqueStrength = 3.5f;
+
+        [Tooltip("Düşerken modelden dışarı doğru çok hafif itilme/fırlama gücü")]
+        [SerializeField, Range(0.5f, 6f)] private float _outwardPopForce = 1.6f;
 
         [Header("Runtime State (Read Only)")]
         [SerializeField] private int _remainingScrewsCount;
@@ -71,25 +74,49 @@ namespace ScrewSolver.Gameplay.Plates
         public void InitializePlate()
         {
             _hasFallen = false;
-            _remainingScrewsCount = _attachedScrews.Count;
 
-            // In case some screws were pre-removed or list was empty
-            if (_remainingScrewsCount == 0 && _attachedScrews.Count > 0)
+            // Eğer liste boşsa veya eksikse, altındaki vidaları otomatik tara
+            if (_attachedScrews == null || _attachedScrews.Count == 0)
             {
-                _remainingScrewsCount = _attachedScrews.Count;
+                AutoFindAttachedScrews();
             }
+
+            // Null referansları temizle
+            _attachedScrews.RemoveAll(s => s == null);
+            _remainingScrewsCount = _attachedScrews.Count;
         }
 
         /// <summary>
-        /// Called when an attached screw is successfully unscrewed.
+        /// Bir vida bu plakaya taşındığında veya geri takıldığında plakaya bağlanır.
+        /// </summary>
+        public void AttachScrew(ScrewObject screw)
+        {
+            if (screw == null || _hasFallen) return;
+
+            if (!_attachedScrews.Contains(screw))
+            {
+                _attachedScrews.Add(screw);
+            }
+
+            _remainingScrewsCount = _attachedScrews.Count;
+        }
+
+        /// <summary>
+        /// Bu plakaya bağlı bir vida söküldüğünde çağrılır.
         /// </summary>
         public void OnScrewRemoved(ScrewObject screw)
         {
             if (_hasFallen) return;
 
-            _remainingScrewsCount = Mathf.Max(0, _remainingScrewsCount - 1);
+            if (screw != null && _attachedScrews.Contains(screw))
+            {
+                _attachedScrews.Remove(screw);
+            }
 
-            if (_remainingScrewsCount == 0)
+            _remainingScrewsCount = _attachedScrews.Count;
+
+            // Ancak ve ancak bu plakayı tutan HİÇBİR vida kalmadığında plaka düşer!
+            if (_remainingScrewsCount <= 0)
             {
                 StartCoroutine(FallRoutine());
             }
@@ -104,16 +131,23 @@ namespace ScrewSolver.Gameplay.Plates
                 yield return new WaitForSeconds(_fallDelay);
             }
 
-            // 1. PuzzleRoot'tan ayır (oyuncu modeli döndürürken düşen parça havada garip dönmesin)
+            // 1. Plakanın baktığı dış yönü (Normal) kaydet
+            Vector3 outwardDir = transform.forward;
+
+            // 2. PuzzleRoot'tan ayır (oyuncu modeli döndürürken düşen parça havada garip dönmesin)
             transform.SetParent(null, true);
 
-            // 2. MeshCollider kullanılıyorsa PhysX hatasını önlemek için convex yap
-            if (_collider is MeshCollider mc && !mc.convex)
+            // 3. Düşen parçanın ve altındaki nesnelerin dönen bulmaca modeliyle çarpışmasını önle
+            Collider[] allColliders = GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < allColliders.Length; i++)
             {
-                mc.convex = true;
+                if (allColliders[i] != null)
+                {
+                    allColliders[i].enabled = false;
+                }
             }
 
-            // 3. Altında kilitlediği vidalara haber ver ve kilitlerini aç
+            // 4. Altında kilitlediği vidalara haber ver ve kilitlerini aç
             OnPlateFell?.Invoke(this);
             foreach (var screw in _coveredScrews)
             {
@@ -123,21 +157,23 @@ namespace ScrewSolver.Gameplay.Plates
                 }
             }
 
-            // 4. Dinamik fiziği aktifleştir (yerçekimi ve serbest düşüş)
+            // 5. Dinamik fiziği aktifleştir: Dışarı doğru fırlama (Pop) + Yerçekimi + Takla
             if (_rigidbody != null)
             {
                 _rigidbody.isKinematic = false;
                 _rigidbody.useGravity = true;
 
-                // Doğal bir takla hissi için hafif rastgele tork ve aşağı itiş
+                // Doğal bir takla hissi için rastgele tork
                 Vector3 randomTorque = new Vector3(
                     UnityEngine.Random.Range(-1f, 1f),
                     UnityEngine.Random.Range(-0.5f, 0.5f),
                     UnityEngine.Random.Range(-1f, 1f)
                 ).normalized * _randomTorqueStrength;
 
+                // Plakayı gövdeden dışarı doğru hafifçe it (yay gibi dışarı atılma hissi) ve doğal yerçekimiyle düşür
+                Vector3 popImpulse = (outwardDir * _outwardPopForce) + (Vector3.down * 0.4f);
+                _rigidbody.AddForce(popImpulse, ForceMode.Impulse);
                 _rigidbody.AddTorque(randomTorque, ForceMode.Impulse);
-                _rigidbody.AddForce(Vector3.down * 1.5f, ForceMode.Impulse);
             }
 
             // Monitor fall until below threshold

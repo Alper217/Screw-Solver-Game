@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using ScrewSolver.Gameplay.Holes;
 using ScrewSolver.Gameplay.Screws;
 
 namespace ScrewSolver.Editor
@@ -41,6 +42,58 @@ namespace ScrewSolver.Editor
             CleanOrphanHolesInScene();
             UpdatePrefabHole(discMesh, darkMat);
             UpdateSceneScrewHoles(discMesh, darkMat);
+        }
+
+        /// <summary>
+        /// Belirli bir vidanın altına HoleBezel yuvasını ekler veya günceller.
+        /// </summary>
+        public static void SetupHoleForScrew(GameObject screwGo)
+        {
+            if (screwGo == null) return;
+
+            Mesh discMesh = GetOrCreateHoleMesh();
+            Material darkMat = GetOrCreateDarkMaterial();
+
+            Transform holeTr = screwGo.transform.Find("HoleBezel");
+            GameObject holeObj = holeTr != null ? holeTr.gameObject : new GameObject("HoleBezel");
+
+            if (holeTr == null)
+            {
+                holeObj.transform.SetParent(screwGo.transform, false);
+            }
+
+            holeObj.transform.localPosition = HoleLocalPosition;
+            holeObj.transform.localRotation = HoleLocalRotation;
+            holeObj.transform.localScale = Vector3.one;
+
+            MeshFilter mf = holeObj.GetComponent<MeshFilter>() ?? holeObj.AddComponent<MeshFilter>();
+            mf.sharedMesh = discMesh;
+
+            MeshRenderer mr = holeObj.GetComponent<MeshRenderer>() ?? holeObj.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = darkMat;
+
+            // PuzzleHole ve Tıklama Collider'ı
+            if (!holeObj.TryGetComponent<PuzzleHole>(out var hole))
+            {
+                hole = holeObj.AddComponent<PuzzleHole>();
+            }
+
+            if (!holeObj.TryGetComponent<SphereCollider>(out var sc))
+            {
+                sc = holeObj.AddComponent<SphereCollider>();
+            }
+            if (sc != null)
+            {
+                sc.radius = 0.12f;
+                sc.center = Vector3.zero;
+            }
+
+            ScrewObject screw = screwGo.GetComponent<ScrewObject>();
+            if (screw != null && hole != null)
+            {
+                hole.Occupy(screw);
+                screw.CurrentHole = hole;
+            }
         }
 
         private static Mesh GetOrCreateHoleMesh()
@@ -185,6 +238,24 @@ namespace ScrewSolver.Editor
 
                 MeshRenderer mr = holeObj.GetComponent<MeshRenderer>() ?? holeObj.AddComponent<MeshRenderer>();
                 mr.sharedMaterial = darkMat;
+
+                if (!holeObj.TryGetComponent<PuzzleHole>(out var hole))
+                {
+                    hole = holeObj.AddComponent<PuzzleHole>();
+                }
+
+                if (!holeObj.TryGetComponent<SphereCollider>(out var sc))
+                {
+                    sc = holeObj.AddComponent<SphereCollider>();
+                }
+                if (sc != null)
+                {
+                    sc.radius = 0.12f;
+                    sc.center = Vector3.zero;
+                }
+
+                hole.Occupy(screw);
+                screw.CurrentHole = hole;
 
                 updated++;
             }

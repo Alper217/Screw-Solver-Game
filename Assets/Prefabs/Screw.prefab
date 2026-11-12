@@ -228,6 +228,8 @@ MonoBehaviour:
   _blockingCount: 0
   _isUnscrewed: 0
   _isAnimating: 0
+  _isSelected: 0
+  _currentHole: {fileID: 0}
 --- !u!23 &5793898804144130710 stripped
 MeshRenderer:
   m_CorrespondingSourceObject: {fileID: -7511558181221131132, guid: 1d75401b1486b6f459c7505a398879a3, type: 3}

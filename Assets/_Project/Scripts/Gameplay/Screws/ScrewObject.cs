@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using DG.Tweening;
 using ScrewSolver.Config;
 using ScrewSolver.Core;
+using ScrewSolver.Gameplay.Holes;
 using ScrewSolver.Gameplay.Plates;
 using UnityEngine;
 
@@ -51,14 +52,21 @@ namespace ScrewSolver.Gameplay.Screws
         [SerializeField] private int _blockingCount;
         [SerializeField] private bool _isUnscrewed;
         [SerializeField] private bool _isAnimating;
+        [SerializeField] private bool _isSelected;
+        [SerializeField] private PuzzleHole _currentHole;
 
+        private Vector3 _dockedLocalPos;
+        private Quaternion _dockedLocalRot;
         private MaterialPropertyBlock _propBlock;
         private Sequence _activeSequence;
+        private Tween _floatTween;
 
         public ColorType Color => _color;
         public bool IsBlocked => _blockingCount > 0;
         public bool IsUnscrewed => _isUnscrewed;
         public bool IsAnimating => _isAnimating;
+        public bool IsSelected => _isSelected;
+        public PuzzleHole CurrentHole { get => _currentHole; set => _currentHole = value; }
         public PlateObject ParentPlate => _parentPlate;
         public IReadOnlyList<PlateObject> BlockingPlates => _blockingPlates;
 
@@ -74,6 +82,26 @@ namespace ScrewSolver.Gameplay.Screws
             if (_meshRenderer == null) _meshRenderer = GetComponentInChildren<MeshRenderer>();
             if (_clickCollider == null) _clickCollider = GetComponent<Collider>();
             if (_parentPlate == null) _parentPlate = GetComponentInParent<PlateObject>();
+
+            // Concave Mesh Collider hatasını önlemek için tüm mesh collider'ları convex yap
+            MeshCollider[] mcs = GetComponentsInChildren<MeshCollider>(true);
+            for (int i = 0; i < mcs.Length; i++)
+            {
+                if (mcs[i] != null) mcs[i].convex = true;
+            }
+
+            // Vidanın altındaki HoleBezel yuvasında PuzzleHole bileşeni olduğundan emin ol ve başlangıçta doldur
+            Transform holeTr = transform.Find("HoleBezel") ?? transform.Find("ScrewHole");
+            if (holeTr != null)
+            {
+                holeTr.localScale = Vector3.one;
+                if (!holeTr.TryGetComponent<PuzzleHole>(out var hole))
+                {
+                    hole = holeTr.gameObject.AddComponent<PuzzleHole>();
+                }
+                _currentHole = hole;
+                _currentHole.Occupy(this);
+            }
 
             _propBlock = new MaterialPropertyBlock();
             ApplyColorVisual();
@@ -174,11 +202,21 @@ namespace ScrewSolver.Gameplay.Screws
             _activeSequence = DOTween.Sequence();
 
             // Vidanın altındaki siyah delik yuvasını (HoleBezel / ScrewHole) gövde veya plaka üzerinde bırak!
-            // Böylece vida uçup kutuya gittiğinde delik yüzeyde kalır ve vidanın arkasından uçmaz.
+            // Böylece vida uçup kutuya gittiğinde delik yüzeyde kalır ve boş delik (PuzzleHole) olarak kullanılabilir.
             Transform holeTransform = transform.Find("HoleBezel") ?? transform.Find("ScrewHole");
             if (holeTransform != null)
             {
                 holeTransform.SetParent(transform.parent, true);
+                if (_currentHole == null)
+                {
+                    _currentHole = holeTransform.GetComponent<PuzzleHole>();
+                }
+            }
+
+            if (_currentHole != null)
+            {
+                _currentHole.Vacate();
+                _currentHole = null;
             }
 
             // Detach from parent plate so the plate falling doesn't drag the flying screw with it
@@ -223,6 +261,31 @@ namespace ScrewSolver.Gameplay.Screws
         }
 
         /// <summary>
+        /// Bekleme yuvasında park etmiş bir vidanın yeni gelen renk kutusuna yumuşak yayla uçuşu.
+        /// </summary>
+        public void PlayFlyFromWaitingSlot(Vector3 targetWorldPosition, Quaternion targetWorldRotation, Action onComplete = null)
+        {
+            _isAnimating = true;
+            _activeSequence?.Kill();
+            _activeSequence = DOTween.Sequence();
+
+            float flyTime = _animationConfig != null ? _animationConfig.FlyDuration : 0.35f;
+            Vector3 startPos = transform.position;
+            Camera cam = Camera.main;
+            Vector3 upDir = cam != null ? cam.transform.up : Vector3.up;
+            Vector3 midPoint = Vector3.Lerp(startPos, targetWorldPosition, 0.5f) + upDir * 0.15f;
+
+            Vector3[] path = new Vector3[] { startPos, midPoint, targetWorldPosition };
+            _activeSequence.Append(transform.DOPath(path, flyTime, PathType.CatmullRom).SetEase(Ease.InOutQuad));
+            _activeSequence.Join(transform.DORotate(targetWorldRotation.eulerAngles, flyTime).SetEase(Ease.InOutQuad));
+            _activeSequence.OnComplete(() =>
+            {
+                _isAnimating = false;
+                onComplete?.Invoke();
+            });
+        }
+
+        /// <summary>
         /// Bekleme barından (Buffer) yeni açılan hedef kutuya pürüzsüz yay çizerek uçar.
         /// </summary>
         public void PlayFlyToSocketAnimation(Vector3 targetWorldPosition, Action onComplete = null)
@@ -236,6 +299,167 @@ namespace ScrewSolver.Gameplay.Screws
             _activeSequence.Append(transform.DOJump(targetWorldPosition, arcHeight, 1, flyTime).SetEase(Ease.OutQuad));
             _activeSequence.OnComplete(() =>
             {
+                _isAnimating = false;
+                onComplete?.Invoke();
+            });
+        }
+
+        /// <summary>
+        /// Vidayı delikten hafifçe yukarı kaldırıp oyuncunun model üzerinde boş bir delik seçmesini bekler.
+        /// Küp döndürüldüğünde vidanın küple beraber dönmesi için PuzzleRoot'a bağlanır ve local koordinatlarda çalışır.
+        /// Ayrıca plakadan söküldüğü için plakanın otomatik serbest düşüşünü anında tetikler.
+        /// </summary>
+        public void PlayLiftAndSelectAnimation()
+        {
+            if (_isAnimating || _isUnscrewed) return;
+
+            _isSelected = true;
+            _dockedLocalPos = transform.localPosition;
+            _dockedLocalRot = transform.localRotation;
+
+            _activeSequence?.Kill();
+            _floatTween?.Kill();
+            _activeSequence = DOTween.Sequence();
+
+            // 1. Vidanın altındaki siyah deliği (HoleBezel) yerinde (plaka/gövde üzerinde) bırak!
+            Transform holeTransform = transform.Find("HoleBezel") ?? transform.Find("ScrewHole");
+            if (holeTransform != null)
+            {
+                holeTransform.SetParent(transform.parent, true);
+                if (_currentHole == null)
+                {
+                    _currentHole = holeTransform.GetComponent<PuzzleHole>();
+                }
+            }
+
+            if (_currentHole != null)
+            {
+                _currentHole.Vacate();
+            }
+
+            // 2. Plakadan vida söküldü -> Plakaya hemen bildir ki bağlı başka vida kalmadıysa anında düşsün!
+            if (_parentPlate != null)
+            {
+                PlateObject oldPlate = _parentPlate;
+                _parentPlate = null;
+                oldPlate.OnScrewRemoved(this);
+            }
+
+            // 3. Vidayı dönen modelin kök objesine (PuzzleRoot) bağla!
+            // Böylece oyuncu küpü 360 derece döndürdüğünde vida da küple beraber döner, havada tek başına kalmaz!
+            var rotator = UnityEngine.Object.FindFirstObjectByType<ScrewSolver.Gameplay.Controllers.PuzzleRotator>();
+            Transform puzzleRoot = rotator != null ? rotator.transform : GameObject.Find("PuzzleRoot")?.transform;
+            if (puzzleRoot != null)
+            {
+                transform.SetParent(puzzleRoot, true);
+            }
+
+            // 4. Local koordinatlarda delikten yukarı çıkış ve süzülme animasyonu
+            Vector3 localSurfaceNormal = transform.parent != null 
+                ? transform.parent.InverseTransformDirection(transform.forward) 
+                : transform.forward;
+            Vector3 targetLocalLiftPos = transform.localPosition + localSurfaceNormal * 0.20f;
+
+            _activeSequence.Append(transform.DOLocalMove(targetLocalLiftPos, 0.22f).SetEase(Ease.OutCubic));
+            _activeSequence.Join(transform.DORotate(new Vector3(0f, 0f, -360f), 0.22f, RotateMode.LocalAxisAdd).SetEase(Ease.OutCubic));
+            _activeSequence.OnComplete(() =>
+            {
+                // Local uzayda hafif havada süzülme animasyonu (Selected Idle)
+                // Küp dönerken local offset korunduğu için vida küple birebir birlikte döner!
+                _floatTween = transform.DOLocalMove(targetLocalLiftPos + localSurfaceNormal * 0.04f, 0.5f)
+                    .SetLoops(-1, LoopType.Yoyo)
+                    .SetEase(Ease.InOutSine);
+            });
+        }
+
+        /// <summary>
+        /// Seçimi iptal edip vidayı tekrar orijinal yuvasına vidalar.
+        /// </summary>
+        public void PlayCancelSelectAnimation()
+        {
+            _isSelected = false;
+            _floatTween?.Kill();
+            _activeSequence?.Kill();
+            _activeSequence = DOTween.Sequence();
+
+            if (_currentHole != null)
+            {
+                _currentHole.Occupy(this);
+                _parentPlate = _currentHole.ParentPlate;
+                if (_parentPlate != null)
+                {
+                    _parentPlate.AttachScrew(this);
+                }
+                transform.SetParent(_currentHole.transform.parent != null ? _currentHole.transform.parent : _currentHole.transform, true);
+                transform.localScale = Vector3.one;
+
+                _activeSequence.Append(transform.DOMove(_currentHole.SnapPosition, 0.20f).SetEase(Ease.InCubic));
+                _activeSequence.Join(transform.DORotate(_currentHole.SnapRotation.eulerAngles, 0.20f).SetEase(Ease.InCubic));
+                _activeSequence.OnComplete(() =>
+                {
+                    if (_currentHole != null)
+                    {
+                        transform.localScale = Vector3.one;
+                        transform.position = _currentHole.SnapPosition;
+                        transform.rotation = _currentHole.SnapRotation;
+                    }
+                });
+            }
+            else
+            {
+                _activeSequence.Append(transform.DOLocalMove(_dockedLocalPos, 0.20f).SetEase(Ease.InCubic));
+                _activeSequence.Join(transform.DOLocalRotate(_dockedLocalRot.eulerAngles, 0.20f).SetEase(Ease.InCubic));
+            }
+        }
+
+        /// <summary>
+        /// Seçili vidayı model veya plaka üzerindeki boş bir PuzzleHole yuvasına uçurup vidalar.
+        /// </summary>
+        public void PlayMoveToHoleAnimation(PuzzleHole targetHole, Action onComplete = null)
+        {
+            if (targetHole == null) return;
+
+            _isSelected = false;
+            _floatTween?.Kill();
+            _activeSequence?.Kill();
+            _activeSequence = DOTween.Sequence();
+            _isAnimating = true;
+
+            // Eski delik zaten boşaltılmıştı
+            if (_currentHole != null)
+            {
+                _currentHole.Vacate();
+            }
+
+            // Yeni yuvayı rezerve et (Scale'i hemen orijinal boyutuna sıfırlar)
+            targetHole.Occupy(this);
+            _currentHole = targetHole;
+            _parentPlate = targetHole.ParentPlate;
+            if (_parentPlate != null)
+            {
+                _parentPlate.AttachScrew(this);
+            }
+
+            Vector3 startPos = transform.position;
+            Vector3 targetPos = targetHole.SnapPosition;
+            Quaternion targetRot = targetHole.SnapRotation;
+
+            Vector3 midPoint = Vector3.Lerp(startPos, targetPos, 0.5f) + (transform.forward + targetRot * Vector3.forward) * 0.20f;
+            Vector3[] path = new Vector3[] { startPos, midPoint, targetPos };
+
+            _activeSequence.Append(transform.DOPath(path, 0.35f, PathType.CatmullRom).SetEase(Ease.InOutQuad));
+            _activeSequence.Join(transform.DORotate(targetRot.eulerAngles, 0.35f).SetEase(Ease.InOutQuad));
+            _activeSequence.OnComplete(() =>
+            {
+                if (targetHole != null)
+                {
+                    transform.SetParent(targetHole.transform.parent != null ? targetHole.transform.parent : targetHole.transform, true);
+                    transform.localScale = Vector3.one;
+                    transform.position = targetHole.SnapPosition;
+                    transform.rotation = targetHole.SnapRotation;
+
+                    targetHole.PlaySnapPunch();
+                }
                 _isAnimating = false;
                 onComplete?.Invoke();
             });
@@ -281,6 +505,7 @@ namespace ScrewSolver.Gameplay.Screws
         private void OnDestroy()
         {
             _activeSequence?.Kill();
+            _floatTween?.Kill();
             foreach (PlateObject plate in _blockingPlates)
             {
                 if (plate != null)
