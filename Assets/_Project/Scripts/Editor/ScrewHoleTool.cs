@@ -67,7 +67,10 @@ namespace ScrewSolver.Editor
             holeObj.transform.localScale = Vector3.one;
 
             MeshFilter mf = holeObj.GetComponent<MeshFilter>() ?? holeObj.AddComponent<MeshFilter>();
-            mf.sharedMesh = discMesh;
+            if (mf.sharedMesh == null || !IsConformedHoleMesh(mf.sharedMesh))
+            {
+                mf.sharedMesh = discMesh;
+            }
 
             MeshRenderer mr = holeObj.GetComponent<MeshRenderer>() ?? holeObj.AddComponent<MeshRenderer>();
             mr.sharedMaterial = darkMat;
@@ -192,7 +195,10 @@ namespace ScrewSolver.Editor
                 holeObj.transform.localScale = Vector3.one;
 
                 MeshFilter mf = holeObj.GetComponent<MeshFilter>() ?? holeObj.AddComponent<MeshFilter>();
-                mf.sharedMesh = discMesh;
+                if (mf.sharedMesh == null || !IsConformedHoleMesh(mf.sharedMesh))
+                {
+                    mf.sharedMesh = discMesh;
+                }
 
                 MeshRenderer mr = holeObj.GetComponent<MeshRenderer>() ?? holeObj.AddComponent<MeshRenderer>();
                 mr.sharedMaterial = darkMat;
@@ -234,7 +240,10 @@ namespace ScrewSolver.Editor
                 holeObj.transform.localScale = Vector3.one;
 
                 MeshFilter mf = holeObj.GetComponent<MeshFilter>() ?? holeObj.AddComponent<MeshFilter>();
-                mf.sharedMesh = discMesh;
+                if (mf.sharedMesh == null || !IsConformedHoleMesh(mf.sharedMesh))
+                {
+                    mf.sharedMesh = discMesh;
+                }
 
                 MeshRenderer mr = holeObj.GetComponent<MeshRenderer>() ?? holeObj.AddComponent<MeshRenderer>();
                 mr.sharedMaterial = darkMat;
@@ -265,6 +274,11 @@ namespace ScrewSolver.Editor
                 EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
                 Debug.Log($"<color=green>[ScrewHoleTool] Sahnedeki {updated} vidanın yuvası düzeltildi: Dik duruş giderildi, simsiyah yapıldı!</color>");
             }
+        }
+
+        private static bool IsConformedHoleMesh(Mesh mesh)
+        {
+            return mesh != null && mesh.name.StartsWith("ConformedHole_", System.StringComparison.Ordinal);
         }
 
         private static Mesh CreateDiscMeshXY(float radius, float depth, int segments)

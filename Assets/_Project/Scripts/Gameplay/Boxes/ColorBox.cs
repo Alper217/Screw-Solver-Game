@@ -77,6 +77,8 @@ namespace ScrewSolver.Gameplay.Boxes
 
         private static readonly int BaseColorPropId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorPropId = Shader.PropertyToID("_Color");
+        private static readonly int SmoothnessPropId = Shader.PropertyToID("_Smoothness");
+        private static readonly int MetallicPropId = Shader.PropertyToID("_Metallic");
         private MaterialPropertyBlock _propBlock;
 
         private void Awake()
@@ -197,6 +199,8 @@ namespace ScrewSolver.Gameplay.Boxes
                     rends[i].GetPropertyBlock(_propBlock);
                     _propBlock.SetColor(BaseColorPropId, c);
                     _propBlock.SetColor(ColorPropId, c);
+                    _propBlock.SetFloat(SmoothnessPropId, 0.08f);
+                    _propBlock.SetFloat(MetallicPropId, 0f);
                     rends[i].SetPropertyBlock(_propBlock);
                 }
             }

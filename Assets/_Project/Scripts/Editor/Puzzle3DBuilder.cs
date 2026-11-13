@@ -21,7 +21,7 @@ namespace ScrewSolver.Editor
     /// çok katmanlı, kilitli ve söküldükçe parçaları fiziksel olarak düşen karmaşık 3D seviyeyi kurar.
     /// Aynı zamanda üstteki kutu kuyruğunu (BoxQueueManager) otomatik oluşturur ve 32 vidaya 8 kutuyu bağlar.
     /// </summary>
-    [InitializeOnLoad]
+    // [InitializeOnLoad] // Çoklu seviye sistemine geçildiği için otomatik üzerine yazma kapatıldı (Menüden hala manuel çalıştırılabilir)
     public static class Puzzle3DBuilder
     {
         private const string PrefabPath = "Assets/Prefabs/Screw.prefab";

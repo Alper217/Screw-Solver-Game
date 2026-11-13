@@ -26,6 +26,7 @@ namespace ScrewSolver.Gameplay.Holes
         [Header("Görsel Elemanlar")]
         [SerializeField] private Renderer _holeRenderer;
         [SerializeField] private Transform _highlightRing;
+        [SerializeField, Range(1.05f, 1.4f)] private float _highlightPulseScale = 1.20f;
 
         public bool IsOccupied => _isOccupied;
         public ScrewObject CurrentScrew => _currentScrew;
@@ -52,9 +53,11 @@ namespace ScrewSolver.Gameplay.Holes
         public Quaternion SnapRotation => transform.rotation;
 
         private Vector3 _originalScale = Vector3.one;
+        private Transform _scaleParent;
 
         private void Awake()
         {
+            _scaleParent = transform.parent;
             if (transform.localScale != Vector3.zero)
             {
                 _originalScale = transform.localScale;
@@ -80,10 +83,35 @@ namespace ScrewSolver.Gameplay.Holes
         }
 
         /// <summary>
+        /// Delik vidadan ayrılıp farklı ölçekli plaka/gövdeye bağlandığında yeni temel yerel ölçeğini senkronize eder.
+        /// </summary>
+        public void SyncScaleReference()
+        {
+            transform.DOKill();
+            _scaleParent = transform.parent;
+            if (transform.localScale != Vector3.zero)
+            {
+                _originalScale = transform.localScale;
+            }
+        }
+
+        private void EnsureScaleReferenceForParent()
+        {
+            if (transform.parent == _scaleParent) return;
+
+            if (!DOTween.IsTweening(transform) && transform.localScale != Vector3.zero)
+            {
+                _originalScale = transform.localScale;
+            }
+            _scaleParent = transform.parent;
+        }
+
+        /// <summary>
         /// Deliği belirli bir vida ile doldurur.
         /// </summary>
         public void Occupy(ScrewObject screw)
         {
+            EnsureScaleReferenceForParent();
             _isOccupied = true;
             _currentScrew = screw;
             transform.DOKill();
@@ -96,6 +124,7 @@ namespace ScrewSolver.Gameplay.Holes
         /// </summary>
         public void Vacate()
         {
+            EnsureScaleReferenceForParent();
             _isOccupied = false;
             _currentScrew = null;
         }
@@ -105,6 +134,7 @@ namespace ScrewSolver.Gameplay.Holes
         /// </summary>
         public void SetHighlight(bool highlight)
         {
+            EnsureScaleReferenceForParent();
             if (_originalScale == Vector3.zero) _originalScale = Vector3.one;
             transform.DOKill();
             if (!highlight || _isOccupied || (_parentPlate != null && _parentPlate.HasFallen))
@@ -113,7 +143,7 @@ namespace ScrewSolver.Gameplay.Holes
                 return;
             }
 
-            transform.DOScale(_originalScale * 1.25f, 0.4f).SetLoops(-1, LoopType.Yoyo).SetEase(Ease.InOutSine);
+            transform.DOScale(_originalScale * _highlightPulseScale, 0.4f).SetLoops(-1, LoopType.Yoyo).SetEase(Ease.InOutSine);
         }
 
         private void OnDestroy()
@@ -126,10 +156,11 @@ namespace ScrewSolver.Gameplay.Holes
         /// </summary>
         public void PlaySnapPunch()
         {
+            EnsureScaleReferenceForParent();
             if (_originalScale == Vector3.zero) _originalScale = Vector3.one;
             transform.DOKill();
             transform.localScale = _originalScale;
-            transform.DOPunchScale(Vector3.one * 0.15f, 0.25f, 6, 0.5f);
+            transform.DOPunchScale(_originalScale * 0.15f, 0.25f, 6, 0.5f);
         }
     }
 }

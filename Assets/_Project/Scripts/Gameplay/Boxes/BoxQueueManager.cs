@@ -41,12 +41,19 @@ namespace ScrewSolver.Gameplay.Boxes
         [SerializeField] private float _dropLocalYOffset = 0.35f;
 
         public event Action OnAllBoxesCompleted;
+        public event Action OnQueueProgressChanged;
+
+        public int TotalBoxesCount => _totalBoxesCount;
+        public int CompletedBoxesCount => _completedBoxesCount;
+        public int PendingQueueCount => _pendingQueue.Count;
+        public int RemainingBoxesCount => Mathf.Max(0, _totalBoxesCount - _completedBoxesCount);
 
         private readonly Queue<ColorType> _pendingQueue = new();
         private readonly ColorBox[] _activeBoxes = new ColorBox[3];
         private ScrewManager _screwManager;
         private int _totalBoxesCount;
         private int _completedBoxesCount;
+        private int _queueEpoch;
 
         private void Awake()
         {
@@ -127,8 +134,10 @@ namespace ScrewSolver.Gameplay.Boxes
         /// <summary>
         /// Kutu kuyruğunu başlatır ve ilk 3 kutuyu yuvalara indirir.
         /// </summary>
-        public void InitializeQueue(List<ColorType> customQueue = null)
+        public void InitializeQueue(IReadOnlyList<ColorType> customQueue = null)
         {
+            _queueEpoch++;
+
             if (customQueue != null)
             {
                 _boxColorQueue = new List<ColorType>(customQueue);
@@ -232,9 +241,11 @@ namespace ScrewSolver.Gameplay.Boxes
             // Sırada bekleyen başka kutu var mı?
             if (_pendingQueue.Count > 0)
             {
-                // Boşalan yuvaya yeni kutuyu indir
+                // Boşalan yuvaya yeni kutuyu indir (seviye değiştiyse eski gecikmiş çağrıyı yoksay)
+                int callEpoch = _queueEpoch;
                 DOVirtual.DelayedCall(0.12f, () =>
                 {
+                    if (this == null || callEpoch != _queueEpoch) return;
                     SpawnBoxAtSlot(slotIndex, isImmediate: false);
                 });
             }
@@ -247,8 +258,24 @@ namespace ScrewSolver.Gameplay.Boxes
 
         private void CheckAllCompleted()
         {
-            // 1. Sahnede hala sökülmemiş vida var mı?
-            ScrewObject[] remainingScrews = FindObjectsByType<ScrewObject>(FindObjectsSortMode.None);
+            bool anyActiveBox = false;
+            for (int i = 0; i < _activeBoxes.Length; i++)
+            {
+                if (_activeBoxes[i] != null && !_activeBoxes[i].IsComplete)
+                {
+                    anyActiveBox = true;
+                    break;
+                }
+            }
+
+            // Ekranda hala tamamlanmayı bekleyen aktif kutu(lar) varsa sahte yeni kutu üretme
+            if (anyActiveBox || _pendingQueue.Count > 0)
+            {
+                return;
+            }
+
+            // 1. Sahnede gerçekten hala sökülmemiş (kuyrukta karşılığı olmayan) vida var mı?
+            ScrewObject[] remainingScrews = FindObjectsByType<ScrewObject>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
             List<ScrewObject> activeScrews = new();
             foreach (var s in remainingScrews)
             {
@@ -258,11 +285,16 @@ namespace ScrewSolver.Gameplay.Boxes
                 }
             }
 
-            // Eğer sökülmemiş vida kaldıysa ama kutu yoksa, kalan vidalar için anında yeni kutuları indir!
+            // Sadece tüm aktif kutular bittiği halde sahnede sahipsiz vida kaldıysa acil yedek kutu üret
             if (activeScrews.Count > 0)
             {
-                Debug.LogWarning($"<color=yellow>[BoxQueueManager] Sahnede hala {activeScrews.Count} adet sökülmemiş vida var! Kalanlar için kutular kuyruğa ekleniyor...</color>");
-                AutoPopulateQueueFromScrews();
+                Debug.LogWarning($"<color=yellow>[BoxQueueManager] Tüm kutular bittiği halde sahnede {activeScrews.Count} adet sökülmemiş vida var! Kalanlar için acil kutular kuyruğa ekleniyor...</color>");
+                AutoPopulateQueueFromScrews(activeScrews.ToArray());
+                foreach (ColorType extraColor in _boxColorQueue)
+                {
+                    _pendingQueue.Enqueue(extraColor);
+                    _totalBoxesCount++;
+                }
                 for (int slotIdx = 0; slotIdx < _boxSlots.Count; slotIdx++)
                 {
                     if (_activeBoxes[slotIdx] == null && _pendingQueue.Count > 0)
@@ -273,21 +305,8 @@ namespace ScrewSolver.Gameplay.Boxes
                 return;
             }
 
-            bool anyActive = false;
-            for (int i = 0; i < _activeBoxes.Length; i++)
-            {
-                if (_activeBoxes[i] != null && !_activeBoxes[i].IsComplete)
-                {
-                    anyActive = true;
-                    break;
-                }
-            }
-
-            if (!anyActive && _pendingQueue.Count == 0 && activeScrews.Count == 0)
-            {
-                Debug.Log($"<color=#00e5ff><b>🎉 [BoxQueueManager] BÖLÜM TAMAMLANDI! Tüm kutular ve vidalar ({_totalBoxesCount}/{_totalBoxesCount}) doldu ve temizlendi!</b></color>");
-                OnAllBoxesCompleted?.Invoke();
-            }
+            Debug.Log($"<color=#00e5ff><b>🎉 [BoxQueueManager] BÖLÜM TAMAMLANDI! Tüm kutular ve vidalar ({_totalBoxesCount}/{_totalBoxesCount}) doldu ve temizlendi!</b></color>");
+            OnAllBoxesCompleted?.Invoke();
         }
 
         private void SyncWithScrewManager()
@@ -309,6 +328,8 @@ namespace ScrewSolver.Gameplay.Boxes
                 }
                 _screwManager.UpdateActiveBoxes(activeList);
             }
+
+            OnQueueProgressChanged?.Invoke();
         }
 
         /// <summary>

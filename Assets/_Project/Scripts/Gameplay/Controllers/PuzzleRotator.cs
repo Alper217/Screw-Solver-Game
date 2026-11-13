@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 namespace ScrewSolver.Gameplay.Controllers
@@ -22,6 +23,9 @@ namespace ScrewSolver.Gameplay.Controllers
         [SerializeField] private float _dragThreshold = 14f;
 
         public event Action<Vector2> OnTap;
+        public event Action OnDragStarted;
+
+        public Transform TargetPivot => _targetPivot;
 
         private bool _isPointerDown;
         private bool _isDragging;
@@ -86,6 +90,7 @@ namespace ScrewSolver.Gameplay.Controllers
             // Basma Başlangıcı
             if (wasPressedThisFrame)
             {
+                if (IsPointerOverUI()) return;
                 _isPointerDown = true;
                 _isDragging = false;
                 _pointerDownPos = pointerPos;
@@ -100,6 +105,7 @@ namespace ScrewSolver.Gameplay.Controllers
                 if (!_isDragging && totalDelta.sqrMagnitude > (_dragThreshold * _dragThreshold))
                 {
                     _isDragging = true;
+                    OnDragStarted?.Invoke();
                 }
 
                 if (_isDragging)
@@ -138,6 +144,17 @@ namespace ScrewSolver.Gameplay.Controllers
             Transform camT = _camera.transform;
             _targetPivot.Rotate(camT.right, rotX, Space.World);
             _targetPivot.Rotate(camT.up, rotY, Space.World);
+        }
+
+        private static bool IsPointerOverUI()
+        {
+            if (EventSystem.current == null) return false;
+            if (Touchscreen.current != null)
+            {
+                int touchId = Touchscreen.current.primaryTouch.touchId.ReadValue();
+                if (EventSystem.current.IsPointerOverGameObject(touchId)) return true;
+            }
+            return EventSystem.current.IsPointerOverGameObject();
         }
 
         private void ApplyInertia()

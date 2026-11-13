@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using ScrewSolver.Gameplay.Boxes;
 using ScrewSolver.Gameplay.Controllers;
+using ScrewSolver.Gameplay.Plates;
 using ScrewSolver.Gameplay.Screws;
 using ScrewSolver.Gameplay.Slots;
 using ScrewSolver.UI;
@@ -65,7 +66,7 @@ namespace ScrewSolver.Gameplay.Level
             if (_levelPrefabs == null || _levelPrefabs.Count == 0)
             {
                 _levelPrefabs = new List<GameObject>();
-                for (int i = 1; i <= 8; i++)
+                for (int i = 1; i <= 50; i++)
                 {
                     string path = $"Assets/Prefabs/Levels/Level_{i:00}.prefab";
                     GameObject p = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
@@ -174,12 +175,15 @@ namespace ScrewSolver.Gameplay.Level
                 _screwManager.DeselectCurrentScrew();
             }
 
-            // 1. Önceki seviyeyi temizle
+            // 1. Önceki seviyeyi ve sahne kökünde düşen/uçan artıkları temizle
+            CleanupDetachedGameplayObjects();
             if (_puzzleRoot != null)
             {
                 for (int i = _puzzleRoot.childCount - 1; i >= 0; i--)
                 {
-                    Destroy(_puzzleRoot.GetChild(i).gameObject);
+                    GameObject oldChild = _puzzleRoot.GetChild(i).gameObject;
+                    oldChild.SetActive(false);
+                    Destroy(oldChild);
                 }
             }
             _activeLevelInstance = null;
@@ -189,9 +193,8 @@ namespace ScrewSolver.Gameplay.Level
             if (prefab != null && _puzzleRoot != null)
             {
                 _activeLevelInstance = Instantiate(prefab, _puzzleRoot);
-                _activeLevelInstance.transform.localPosition = Vector3.zero;
+                _activeLevelInstance.transform.localPosition = prefab.transform.localPosition;
                 _activeLevelInstance.transform.localRotation = Quaternion.identity;
-                _activeLevelInstance.transform.localScale = Vector3.one;
             }
 
             // 3. Bekleme yuvalarını sıfırla
@@ -200,12 +203,29 @@ namespace ScrewSolver.Gameplay.Level
                 _waitingSlotManager.InitializeSlots();
             }
 
-            // 4. BoxQueueManager'ı yeni seviyenin vidalarına göre güncelle
+            // 4. LevelConfig varsa Solver onaylı kuyruğu ve süreyi kullan, yoksa otomatik üret
+            float levelDuration = _defaultLevelDuration;
+            LevelConfig levelConfig = _activeLevelInstance != null
+                ? _activeLevelInstance.GetComponent<LevelConfig>()
+                : null;
+
+            if (levelConfig != null && levelConfig.TimeLimitSeconds > 0f)
+            {
+                levelDuration = levelConfig.TimeLimitSeconds;
+            }
+
             if (_boxQueueManager != null && _activeLevelInstance != null)
             {
-                ScrewObject[] levelScrews = _activeLevelInstance.GetComponentsInChildren<ScrewObject>(true);
-                _boxQueueManager.AutoPopulateQueueFromScrews(levelScrews);
-                _boxQueueManager.InitializeQueue();
+                if (levelConfig != null && levelConfig.OptimizedBoxQueue != null && levelConfig.OptimizedBoxQueue.Count > 0)
+                {
+                    _boxQueueManager.InitializeQueue(levelConfig.OptimizedBoxQueue);
+                }
+                else
+                {
+                    ScrewObject[] levelScrews = _activeLevelInstance.GetComponentsInChildren<ScrewObject>(true);
+                    _boxQueueManager.AutoPopulateQueueFromScrews(levelScrews);
+                    _boxQueueManager.InitializeQueue();
+                }
             }
 
             // 5. UI durumunu güncelle
@@ -213,10 +233,33 @@ namespace ScrewSolver.Gameplay.Level
             {
                 _gameUI.HideAllPopupsImmediately();
                 _gameUI.SetLevelNumber(_currentLevelIndex + 1);
-                _gameUI.StartLevelTimer(_defaultLevelDuration);
+                _gameUI.StartLevelTimer(levelDuration);
             }
 
             Debug.Log($"<color=#00e5ff><b>[LevelManager]</b> Seviye {_currentLevelIndex + 1} başarıyla yüklendi!</color>");
+        }
+
+        private static void CleanupDetachedGameplayObjects()
+        {
+            PlateObject[] plates = FindObjectsByType<PlateObject>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            for (int i = 0; i < plates.Length; i++)
+            {
+                if (plates[i] != null && plates[i].transform.parent == null)
+                {
+                    plates[i].gameObject.SetActive(false);
+                    Destroy(plates[i].gameObject);
+                }
+            }
+
+            ScrewObject[] screws = FindObjectsByType<ScrewObject>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            for (int i = 0; i < screws.Length; i++)
+            {
+                if (screws[i] != null && screws[i].transform.parent == null)
+                {
+                    screws[i].gameObject.SetActive(false);
+                    Destroy(screws[i].gameObject);
+                }
+            }
         }
 
         /// <summary>

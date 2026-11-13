@@ -43,10 +43,10 @@ namespace ScrewSolver.Editor
         }
         */
 
-        [MenuItem("ScrewSolver/Seviye/8 Seviyeyi Otomatik Üret ve Kaydet (Devre Dışı) %#l")]
+        [MenuItem("ScrewSolver/Seviye/Eski Seviye Üretici (Yeni Pencereyi Aç)")]
         public static void GenerateMenuCommand()
         {
-            EditorUtility.DisplayDialog("Devre Dışı", "Level Generator şimdilik kod üzerinden iptal edilmiştir.", "Tamam");
+            Generator.LevelGeneratorWindow.ShowWindow();
         }
 
         public static void GenerateAllLevels(bool silent = false)

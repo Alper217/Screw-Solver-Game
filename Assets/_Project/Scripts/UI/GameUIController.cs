@@ -25,6 +25,13 @@ namespace ScrewSolver.UI
         [SerializeField] private Text _levelText;
         [SerializeField] private Text _timerText;
         [SerializeField] private Button _restartButton;
+        [SerializeField] private RectTransform _progressFillViewport;
+        [SerializeField] private Image _progressFillImage;
+        [SerializeField] private Text _progressText;
+        [SerializeField] private Text _boxesLeftText;
+        [SerializeField] private Image _bottomStatusBg;
+        [SerializeField] private Text _bottomStatusText;
+        [SerializeField] private CanvasGroup _onboardingHintGroup;
 
         [Header("Zaman & Rekabet Ayarları")]
         [SerializeField] private bool _enableTimer = true;
@@ -69,6 +76,10 @@ namespace ScrewSolver.UI
         private float _savedPlaneDistance = 100f;
         private bool _pendingWinShortcut;
         private bool _pendingLoseShortcut;
+        private int _totalLevelScrews;
+        private bool _hintDismissed;
+        private Color _timerDefaultColor = Color.white;
+        private bool _hasCapturedTimerColor;
         private readonly List<GameObject> _activeVfxInstances = new();
 
         public float TimeRemaining => _timeRemaining;
@@ -185,9 +196,40 @@ namespace ScrewSolver.UI
             Transform hudBar = transform.Find("HUD_TopBar");
             if (hudBar != null)
             {
-                if (_levelText == null) _levelText = hudBar.Find("LevelText")?.GetComponent<Text>();
-                if (_timerText == null) _timerText = hudBar.Find("TimerText")?.GetComponent<Text>();
-                if (_restartButton == null) _restartButton = hudBar.Find("RestartButton")?.GetComponent<Button>();
+                if (_levelText == null)
+                    _levelText = hudBar.Find("LevelBadge/LevelText")?.GetComponent<Text>()
+                        ?? hudBar.Find("LevelText")?.GetComponent<Text>();
+                if (_timerText == null)
+                    _timerText = hudBar.Find("TimerBadge/TimerText")?.GetComponent<Text>()
+                        ?? hudBar.Find("TimerText")?.GetComponent<Text>();
+                if (_restartButton == null)
+                    _restartButton = hudBar.Find("RestartButton")?.GetComponent<Button>();
+                if (_boxesLeftText == null)
+                    _boxesLeftText = hudBar.Find("BoxesLeftBadge/BoxesLeftText")?.GetComponent<Text>();
+                if (_progressFillViewport == null)
+                    _progressFillViewport = hudBar.Find("ProgressBar/FillViewport")?.GetComponent<RectTransform>();
+                if (_progressFillImage == null)
+                    _progressFillImage = hudBar.Find("ProgressBar/FillViewport/Fill")?.GetComponent<Image>()
+                        ?? hudBar.Find("ProgressBar/Fill")?.GetComponent<Image>();
+                if (_progressText == null)
+                    _progressText = hudBar.Find("ProgressBar/ProgressText")?.GetComponent<Text>();
+            }
+
+            if (_timerText != null && !_hasCapturedTimerColor)
+            {
+                _timerDefaultColor = _timerText.color;
+                _hasCapturedTimerColor = true;
+            }
+
+            Transform hudBottom = transform.Find("HUD_Bottom");
+            if (hudBottom != null)
+            {
+                if (_bottomStatusBg == null)
+                    _bottomStatusBg = hudBottom.Find("BottomStatusPill")?.GetComponent<Image>();
+                if (_bottomStatusText == null)
+                    _bottomStatusText = hudBottom.Find("BottomStatusPill/StatusText")?.GetComponent<Text>();
+                if (_onboardingHintGroup == null)
+                    _onboardingHintGroup = hudBottom.Find("OnboardingHint")?.GetComponent<CanvasGroup>();
             }
 
             if (_restartButton != null)
@@ -343,12 +385,21 @@ namespace ScrewSolver.UI
             {
                 _screwManager.OnLevelCompleted += HandleLevelCompleted;
                 _screwManager.OnGameOver += HandleNoMovesGameOver;
+                _screwManager.OnSelectionStateChanged += HandleScrewSelectionStateChanged;
+                _screwManager.OnScrewActionCompleted += HandleScrewActionCompleted;
             }
 
             BoxQueueManager boxQueue = FindFirstObjectByType<BoxQueueManager>();
             if (boxQueue != null)
             {
                 boxQueue.OnAllBoxesCompleted += HandleLevelCompleted;
+                boxQueue.OnQueueProgressChanged += HandleQueueProgressChanged;
+            }
+
+            PuzzleRotator rotator = FindFirstObjectByType<PuzzleRotator>();
+            if (rotator != null)
+            {
+                rotator.OnDragStarted += DismissOnboardingHint;
             }
 
             if (_waitingSlotManager != null)
@@ -376,12 +427,21 @@ namespace ScrewSolver.UI
             {
                 _screwManager.OnLevelCompleted -= HandleLevelCompleted;
                 _screwManager.OnGameOver -= HandleNoMovesGameOver;
+                _screwManager.OnSelectionStateChanged -= HandleScrewSelectionStateChanged;
+                _screwManager.OnScrewActionCompleted -= HandleScrewActionCompleted;
             }
 
             BoxQueueManager boxQueue = FindFirstObjectByType<BoxQueueManager>();
             if (boxQueue != null)
             {
                 boxQueue.OnAllBoxesCompleted -= HandleLevelCompleted;
+                boxQueue.OnQueueProgressChanged -= HandleQueueProgressChanged;
+            }
+
+            PuzzleRotator rotator = FindFirstObjectByType<PuzzleRotator>();
+            if (rotator != null)
+            {
+                rotator.OnDragStarted -= DismissOnboardingHint;
             }
 
             if (_waitingSlotManager != null)
@@ -455,7 +515,124 @@ namespace ScrewSolver.UI
             _timeRemaining = duration;
             _isTimerRunning = true;
             _isGameEnded = false;
+            _totalLevelScrews = 0;
             UpdateTimerDisplay();
+            RefreshGameplayHud();
+        }
+
+        private void HandleScrewSelectionStateChanged(bool hasSelection)
+        {
+            if (hasSelection)
+            {
+                DismissOnboardingHint();
+            }
+            RefreshGameplayHud();
+        }
+
+        private void HandleScrewActionCompleted()
+        {
+            DismissOnboardingHint();
+            RefreshGameplayHud();
+        }
+
+        private void HandleQueueProgressChanged()
+        {
+            RefreshGameplayHud();
+        }
+
+        public void RefreshGameplayHud()
+        {
+            var allScrews = FindObjectsByType<ScrewSolver.Gameplay.Screws.ScrewObject>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            if (_totalLevelScrews <= 0)
+            {
+                _totalLevelScrews = allScrews.Length;
+            }
+
+            int remainingScrews = 0;
+            for (int i = 0; i < allScrews.Length; i++)
+            {
+                if (allScrews[i] != null && !allScrews[i].IsUnscrewed)
+                {
+                    remainingScrews++;
+                }
+            }
+
+            int totalScrews = Mathf.Max(1, _totalLevelScrews);
+            int clearedScrews = Mathf.Clamp(_totalLevelScrews - remainingScrews, 0, totalScrews);
+            float progressRatio = (float)clearedScrews / totalScrews;
+
+            if (_progressFillViewport != null)
+            {
+                _progressFillViewport.DOKill();
+                if (clearedScrews == 0)
+                {
+                    _progressFillViewport.anchorMax = new Vector2(0f, 1f);
+                }
+                else
+                {
+                    _progressFillViewport.DOAnchorMax(new Vector2(progressRatio, 1f), 0.25f).SetEase(Ease.OutQuad).SetUpdate(true);
+                }
+            }
+            else if (_progressFillImage != null)
+            {
+                _progressFillImage.DOKill();
+                _progressFillImage.DOFillAmount(progressRatio, 0.25f).SetEase(Ease.OutQuad).SetUpdate(true);
+            }
+
+            if (_progressText != null)
+            {
+                _progressText.text = $"{clearedScrews} / {_totalLevelScrews}";
+            }
+
+            if (_boxesLeftText != null)
+            {
+                BoxQueueManager boxQueue = FindFirstObjectByType<BoxQueueManager>();
+                if (boxQueue != null && boxQueue.TotalBoxesCount > 0)
+                {
+                    _boxesLeftText.text = $"KUTU: {boxQueue.RemainingBoxesCount}/{boxQueue.TotalBoxesCount}";
+                }
+            }
+
+            if (_bottomStatusText != null)
+            {
+                bool hasSelection = _screwManager != null && _screwManager.HasSelectedScrew;
+                if (hasSelection)
+                {
+                    _bottomStatusText.text = "Yeşil parlak deliklerden birine dokun!";
+                    _bottomStatusText.color = new Color(0.75f, 0.28f, 0.04f, 1f);
+                    if (_bottomStatusBg != null) _bottomStatusBg.color = new Color(1f, 0.93f, 0.78f, 1f);
+                }
+                else
+                {
+                    var allHoles = FindObjectsByType<ScrewSolver.Gameplay.Holes.PuzzleHole>(FindObjectsSortMode.None);
+                    int emptyHoleCount = 0;
+                    for (int i = 0; i < allHoles.Length; i++)
+                    {
+                        var h = allHoles[i];
+                        if (h == null || h.IsOccupied) continue;
+                        if (h.ParentPlate != null && h.ParentPlate.HasFallen) continue;
+                        emptyHoleCount++;
+                    }
+
+                    _bottomStatusText.text = $"Boş Delik: {emptyHoleCount}   •   Kalan Vida: {remainingScrews}";
+                    _bottomStatusText.color = new Color(0.24f, 0.19f, 0.15f, 1f);
+                    if (_bottomStatusBg != null) _bottomStatusBg.color = new Color(1f, 0.98f, 0.94f, 1f);
+                }
+            }
+        }
+
+        private void DismissOnboardingHint()
+        {
+            if (_hintDismissed || _onboardingHintGroup == null) return;
+            _hintDismissed = true;
+            _onboardingHintGroup.DOKill();
+            _onboardingHintGroup.DOFade(0f, 0.4f).SetUpdate(true).OnComplete(() =>
+            {
+                if (_onboardingHintGroup != null)
+                {
+                    _onboardingHintGroup.gameObject.SetActive(false);
+                }
+            });
         }
 
         public void PauseTimer()
@@ -485,7 +662,7 @@ namespace ScrewSolver.UI
             }
             else
             {
-                _timerText.color = Color.white;
+                _timerText.color = _hasCapturedTimerColor ? _timerDefaultColor : Color.white;
             }
         }
 
@@ -931,6 +1108,9 @@ namespace ScrewSolver.UI
             if (_defeatCenterBadge != null) _defeatCenterBadge.DOKill();
             if (_nextLevelButton != null) _nextLevelButton.transform.DOKill();
             if (_retryButton != null) _retryButton.transform.DOKill();
+            if (_progressFillViewport != null) _progressFillViewport.DOKill();
+            if (_progressFillImage != null) _progressFillImage.DOKill();
+            if (_onboardingHintGroup != null) _onboardingHintGroup.DOKill();
             for (int i = 0; i < _victoryStars.Count; i++)
             {
                 if (_victoryStars[i] != null) _victoryStars[i].transform.DOKill();

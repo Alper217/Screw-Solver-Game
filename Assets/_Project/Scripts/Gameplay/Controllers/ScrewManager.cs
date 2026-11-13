@@ -31,6 +31,10 @@ namespace ScrewSolver.Gameplay.Controllers
 
         public event Action OnLevelCompleted;
         public event Action OnGameOver;
+        public event Action<bool> OnSelectionStateChanged;
+        public event Action OnScrewActionCompleted;
+
+        public bool HasSelectedScrew => _selectedScrew != null;
 
         /// <summary>
         /// BoxQueueManager gibi dinamik kuyruk yöneticileri tarafından aktif kutuları senkronize etmek için çağrılır.
@@ -143,8 +147,8 @@ namespace ScrewSolver.Gameplay.Controllers
 
             if (hitCount <= 0)
             {
-                // Boşluğa tıklandı -> Seçili vida varsa iptal et
-                if (_selectedScrew != null)
+                // Boşluğa tıklandı -> Orijinal plakası düşmediyse seçimi iptal et, düştüyse boş delik seçilmesini bekle
+                if (_selectedScrew != null && _selectedScrew.CanReturnToOriginalHole)
                 {
                     DeselectCurrentScrew();
                 }
@@ -193,10 +197,17 @@ namespace ScrewSolver.Gameplay.Controllers
                     return;
                 }
 
-                // B) Eğer oyuncu DOLU bir deliğe veya başka bir vidaya tıkladıysa (veya boş yüzeye):
-                // Kullanıcı talebi: Tıklanan delik doluysa vida ilk boş deliğe sapmasın, kendi yuvasına geri dönsün!
-                Debug.Log("<color=yellow>[ScrewManager] Tıklanan delik dolu veya geçersiz! Seçili vida kendi orijinal yuvasına geri dönüyor.</color>");
-                DeselectCurrentScrew();
+                // B) Eğer oyuncu DOLU bir deliğe veya başka bir vidaya tıkladıysa:
+                // Orijinal plakası hala yerindeyse kendi yuvasına geri dönsün; plakası düştüyse elimizde bekleyip boş delik istesin!
+                if (_selectedScrew.CanReturnToOriginalHole)
+                {
+                    Debug.Log("<color=yellow>[ScrewManager] Tıklanan delik dolu veya geçersiz! Seçili vida kendi orijinal yuvasına geri dönüyor.</color>");
+                    DeselectCurrentScrew();
+                }
+                else
+                {
+                    Debug.Log("<color=orange>[ScrewManager] Bu vidanın plakası düştüğü için geri dönemez! Lütfen yeşil parlak boş bir deliğe bırakın.</color>");
+                }
                 return;
             }
 
@@ -244,6 +255,7 @@ namespace ScrewSolver.Gameplay.Controllers
 
             // Sahnedeki tüm boş delikleri hafif parlat/nabız ver
             HighlightAllEmptyHoles(true);
+            OnSelectionStateChanged?.Invoke(true);
             Debug.Log($"<color=#{ColorUtility.ToHtmlStringRGB(screw.Color.ToUnityColor())}><b>[{screw.Color}]</b> Vida seçildi! Modeldeki boş bir deliğe tıklayarak vidalayabilirsiniz.</color>");
 
             // Vida söküldükten ve plaka düşüşü tetiklendikten sonra geçerli hamle kaldı mı kontrol et!
@@ -296,9 +308,11 @@ namespace ScrewSolver.Gameplay.Controllers
             ScrewObject movingScrew = _selectedScrew;
             _selectedScrew = null;
             HighlightAllEmptyHoles(false);
+            OnSelectionStateChanged?.Invoke(false);
 
             movingScrew.PlayMoveToHoleAnimation(targetHole, () =>
             {
+                OnScrewActionCompleted?.Invoke();
                 Debug.Log($"<color=#00ffc4><b>[PuzzleHole]</b> Vida başarıyla modeldeki boş deliğe vidalandı!</color>");
             });
         }
@@ -311,6 +325,7 @@ namespace ScrewSolver.Gameplay.Controllers
                 _selectedScrew = null;
             }
             HighlightAllEmptyHoles(false);
+            OnSelectionStateChanged?.Invoke(false);
         }
 
         private void HighlightAllEmptyHoles(bool highlight)
@@ -350,6 +365,7 @@ namespace ScrewSolver.Gameplay.Controllers
                 targetBox.OnScrewLanded();
             }, targetWorldScale);
 
+            OnScrewActionCompleted?.Invoke();
             Debug.Log($"<color=#{ColorUtility.ToHtmlStringRGB(screw.Color.ToUnityColor())}><b>[{screw.Color}]</b> Vida havalandı ve kendi renk kutusuna uçuyor!</color>");
         }
 

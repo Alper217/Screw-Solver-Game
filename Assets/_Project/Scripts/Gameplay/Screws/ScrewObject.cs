@@ -65,6 +65,9 @@ namespace ScrewSolver.Gameplay.Screws
 
         private Vector3 _dockedLocalPos;
         private Quaternion _dockedLocalRot;
+        private Transform _initialParent;
+        private Vector3 _initialLocalScale = Vector3.one;
+        private float _initialWorldScale = 1f;
         private MaterialPropertyBlock _propBlock;
         private Sequence _activeSequence;
         private Tween _floatTween;
@@ -92,6 +95,11 @@ namespace ScrewSolver.Gameplay.Screws
             if (_clickCollider == null) _clickCollider = GetComponent<Collider>();
             if (_parentPlate == null) _parentPlate = GetComponentInParent<PlateObject>();
 
+            _initialParent = transform.parent;
+            _initialLocalScale = transform.localScale != Vector3.zero ? transform.localScale : Vector3.one;
+            Vector3 lossy = transform.lossyScale;
+            _initialWorldScale = Mathf.Max(0.01f, (Mathf.Abs(lossy.x) + Mathf.Abs(lossy.y) + Mathf.Abs(lossy.z)) / 3f);
+
             // Concave Mesh Collider hatasını önlemek için tüm mesh collider'ları convex yap
             MeshCollider[] mcs = GetComponentsInChildren<MeshCollider>(true);
             for (int i = 0; i < mcs.Length; i++)
@@ -108,6 +116,7 @@ namespace ScrewSolver.Gameplay.Screws
                 {
                     hole = holeTr.gameObject.AddComponent<PuzzleHole>();
                 }
+                hole.SyncScaleReference();
                 _currentHole = hole;
                 _currentHole.Occupy(this);
             }
@@ -196,22 +205,37 @@ namespace ScrewSolver.Gameplay.Screws
         }
 
         /// <summary>
-        /// Plays a fast, juicy wiggle/shake animation when the player taps a blocked screw.
+        /// Engelli veya seçili bekleyen bir vidaya tıklandığında sağa-sola sıkışmış vida gibi dönme titremesi oynatır.
         /// </summary>
         public void PlayWiggleLockedAnimation()
         {
             if (_isUnscrewed || _isAnimating) return;
 
-            float duration = _animationConfig != null ? _animationConfig.WiggleDuration : 0.20f;
-            float strength = _animationConfig != null ? _animationConfig.WiggleStrength : 12f;
+            float duration = _animationConfig != null ? Mathf.Max(0.24f, _animationConfig.WiggleDuration) : 0.28f;
+            float angle = _animationConfig != null ? Mathf.Max(24f, _animationConfig.WiggleStrength * 2f) : 26f;
 
             _isAnimating = true;
-            transform.DOComplete();
+            _activeSequence?.Kill();
 
-            transform.DOShakeRotation(duration, new Vector3(0f, 0f, strength), vibrato: 10, randomness: 90f)
-                .SetEase(Ease.OutQuad)
-                .OnComplete(() => _isAnimating = false);
+            Quaternion startLocalRot = transform.localRotation;
+            float step = duration * 0.2f;
+
+            Sequence seq = DOTween.Sequence();
+            seq.Append(transform.DOLocalRotateQuaternion(startLocalRot * Quaternion.Euler(0f, 0f, -angle), step).SetEase(Ease.OutQuad));
+            seq.Append(transform.DOLocalRotateQuaternion(startLocalRot * Quaternion.Euler(0f, 0f, angle), step).SetEase(Ease.InOutQuad));
+            seq.Append(transform.DOLocalRotateQuaternion(startLocalRot * Quaternion.Euler(0f, 0f, -angle * 0.65f), step).SetEase(Ease.InOutQuad));
+            seq.Append(transform.DOLocalRotateQuaternion(startLocalRot * Quaternion.Euler(0f, 0f, angle * 0.35f), step).SetEase(Ease.InOutQuad));
+            seq.Append(transform.DOLocalRotateQuaternion(startLocalRot, step).SetEase(Ease.OutQuad));
+            seq.OnComplete(() =>
+            {
+                transform.localRotation = startLocalRot;
+                _isAnimating = false;
+            });
+            _activeSequence = seq;
         }
+
+        public bool CanReturnToOriginalHole =>
+            _currentHole != null && (_currentHole.ParentPlate == null || !_currentHole.ParentPlate.HasFallen);
 
         /// <summary>
         /// Sequences the screw loosening from the hole, lifting up, and flying parabolically to the target.
@@ -245,21 +269,8 @@ namespace ScrewSolver.Gameplay.Screws
 
             // Vidanın altındaki siyah delik yuvasını (HoleBezel / ScrewHole) gövde veya plaka üzerinde bırak!
             // Böylece vida uçup kutuya gittiğinde delik yüzeyde kalır ve boş delik (PuzzleHole) olarak kullanılabilir.
-            Transform holeTransform = transform.Find("HoleBezel") ?? transform.Find("ScrewHole");
-            if (holeTransform != null)
-            {
-                holeTransform.SetParent(transform.parent, true);
-                if (_currentHole == null)
-                {
-                    _currentHole = holeTransform.GetComponent<PuzzleHole>();
-                }
-            }
-
-            if (_currentHole != null)
-            {
-                _currentHole.Vacate();
-                _currentHole = null;
-            }
+            DetachHoleAndVacate();
+            _currentHole = null;
 
             // Detach from parent plate so the plate falling doesn't drag the flying screw with it
             transform.SetParent(null, true);
@@ -379,36 +390,30 @@ namespace ScrewSolver.Gameplay.Screws
             _activeSequence = DOTween.Sequence();
 
             // 1. Vidanın altındaki siyah deliği (HoleBezel) yerinde (plaka/gövde üzerinde) bırak!
-            Transform holeTransform = transform.Find("HoleBezel") ?? transform.Find("ScrewHole");
-            if (holeTransform != null)
+            DetachHoleAndVacate();
+
+            // 2. ÖNCE vidayı dönen modelin kök objesine (PuzzleRoot / TargetPivot) bağla!
+            // Böylece plaka düştüğünde vida asla plakaya bağlı kalıp aşağı uçmaz/kaybolmaz.
+            var rotator = UnityEngine.Object.FindFirstObjectByType<ScrewSolver.Gameplay.Controllers.PuzzleRotator>();
+            Transform puzzleRoot = rotator != null && rotator.TargetPivot != null
+                ? rotator.TargetPivot
+                : (rotator != null ? rotator.transform : GameObject.Find("PuzzleRoot")?.transform);
+            if (puzzleRoot != null)
             {
-                holeTransform.SetParent(transform.parent, true);
-                if (_currentHole == null)
-                {
-                    _currentHole = holeTransform.GetComponent<PuzzleHole>();
-                }
+                transform.SetParent(puzzleRoot, true);
             }
 
-            if (_currentHole != null)
-            {
-                _currentHole.Vacate();
-            }
-
-            // 2. Plakadan vida söküldü -> Plakaya hemen bildir ki bağlı başka vida kalmadıysa anında düşsün!
+            // 3. Plakadan vida söküldü -> Plakaya bildir; eğer bu son vidaysa ve plaka düşüyorsa eski delik referansını temizle!
             if (_parentPlate != null)
             {
                 PlateObject oldPlate = _parentPlate;
                 _parentPlate = null;
                 oldPlate.OnScrewRemoved(this);
-            }
 
-            // 3. Vidayı dönen modelin kök objesine (PuzzleRoot) bağla!
-            // Böylece oyuncu küpü 360 derece döndürdüğünde vida da küple beraber döner, havada tek başına kalmaz!
-            var rotator = UnityEngine.Object.FindFirstObjectByType<ScrewSolver.Gameplay.Controllers.PuzzleRotator>();
-            Transform puzzleRoot = rotator != null ? rotator.transform : GameObject.Find("PuzzleRoot")?.transform;
-            if (puzzleRoot != null)
-            {
-                transform.SetParent(puzzleRoot, true);
+                if (oldPlate.HasFallen || oldPlate.RemainingScrewsCount <= 0)
+                {
+                    _currentHole = null;
+                }
             }
 
             // 4. Local koordinatlarda delikten yukarı çıkış ve süzülme animasyonu
@@ -439,7 +444,7 @@ namespace ScrewSolver.Gameplay.Screws
             _activeSequence?.Kill();
             _activeSequence = DOTween.Sequence();
 
-            if (_currentHole != null)
+            if (_currentHole != null && (_currentHole.ParentPlate == null || !_currentHole.ParentPlate.HasFallen))
             {
                 _currentHole.Occupy(this);
                 _parentPlate = _currentHole.ParentPlate;
@@ -447,8 +452,9 @@ namespace ScrewSolver.Gameplay.Screws
                 {
                     _parentPlate.AttachScrew(this);
                 }
-                transform.SetParent(_currentHole.transform.parent != null ? _currentHole.transform.parent : _currentHole.transform, true);
-                transform.localScale = Vector3.one;
+                Transform holeParent = _currentHole.transform.parent != null ? _currentHole.transform.parent : _currentHole.transform;
+                transform.SetParent(holeParent, true);
+                transform.localScale = ComputeRestoredLocalScale(holeParent);
 
                 _activeSequence.Append(transform.DOMove(_currentHole.SnapPosition, 0.20f).SetEase(Ease.InCubic));
                 _activeSequence.Join(transform.DORotate(_currentHole.SnapRotation.eulerAngles, 0.20f).SetEase(Ease.InCubic));
@@ -456,13 +462,14 @@ namespace ScrewSolver.Gameplay.Screws
                 {
                     if (_currentHole != null)
                     {
-                        transform.localScale = Vector3.one;
+                        Transform finalParent = _currentHole.transform.parent != null ? _currentHole.transform.parent : _currentHole.transform;
+                        transform.localScale = ComputeRestoredLocalScale(finalParent);
                         transform.position = _currentHole.SnapPosition;
                         transform.rotation = _currentHole.SnapRotation;
                     }
                 });
             }
-            else
+            else if (_currentHole == null)
             {
                 _activeSequence.Append(transform.DOLocalMove(_dockedLocalPos, 0.20f).SetEase(Ease.InCubic));
                 _activeSequence.Join(transform.DOLocalRotate(_dockedLocalRot.eulerAngles, 0.20f).SetEase(Ease.InCubic));
@@ -510,8 +517,9 @@ namespace ScrewSolver.Gameplay.Screws
             {
                 if (targetHole != null)
                 {
-                    transform.SetParent(targetHole.transform.parent != null ? targetHole.transform.parent : targetHole.transform, true);
-                    transform.localScale = Vector3.one;
+                    Transform holeParent = targetHole.transform.parent != null ? targetHole.transform.parent : targetHole.transform;
+                    transform.SetParent(holeParent, true);
+                    transform.localScale = ComputeRestoredLocalScale(holeParent);
                     transform.position = targetHole.SnapPosition;
                     transform.rotation = targetHole.SnapRotation;
 
@@ -520,6 +528,47 @@ namespace ScrewSolver.Gameplay.Screws
                 _isAnimating = false;
                 onComplete?.Invoke();
             });
+        }
+
+        private void DetachHoleAndVacate()
+        {
+            Transform holeTransform = transform.Find("HoleBezel") ?? transform.Find("ScrewHole");
+            if (holeTransform != null)
+            {
+                holeTransform.SetParent(transform.parent, true);
+                if (_currentHole == null)
+                {
+                    _currentHole = holeTransform.GetComponent<PuzzleHole>();
+                }
+            }
+
+            if (_currentHole != null)
+            {
+                _currentHole.SyncScaleReference();
+                _currentHole.Vacate();
+            }
+        }
+
+        private Vector3 ComputeRestoredLocalScale(Transform targetParent)
+        {
+            if (targetParent == null)
+            {
+                return Vector3.one * Mathf.Max(0.01f, _initialWorldScale);
+            }
+
+            if (targetParent == _initialParent && _initialLocalScale != Vector3.zero)
+            {
+                return _initialLocalScale;
+            }
+
+            Vector3 pLossy = targetParent.lossyScale;
+            float pAvg = (Mathf.Abs(pLossy.x) + Mathf.Abs(pLossy.y) + Mathf.Abs(pLossy.z)) / 3f;
+            if (pAvg > 0.0001f && _initialWorldScale > 0.0001f)
+            {
+                return Vector3.one * (_initialWorldScale / pAvg);
+            }
+
+            return Vector3.one;
         }
 
         /// <summary>
