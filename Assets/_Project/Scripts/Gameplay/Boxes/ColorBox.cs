@@ -263,6 +263,16 @@ namespace ScrewSolver.Gameplay.Boxes
             DrawPreviewGizmos(true);
         }
 
+        /// <summary>
+        /// Kutunun mevcut dünya ölçeğine göre içine yerleşecek vidanın orantılı (uniform) dünya ölçeğini hesaplar.
+        /// </summary>
+        public float GetTargetScrewWorldScale()
+        {
+            float scaleRatio = _autoScaleWithBox ? (transform.lossyScale.x / 9.88f) : 1f;
+            if (scaleRatio <= 0.001f) scaleRatio = 1f;
+            return scaleRatio * _previewScaleMultiplier;
+        }
+
         private void DrawPreviewGizmos(bool isSelected)
         {
             if (!_showScrewPreview) return;
@@ -276,9 +286,8 @@ namespace ScrewSolver.Gameplay.Boxes
 #endif
 
             // Orantılı ölçek: TargetBox sahne referans ölçeği ~9.88'dir.
-            float scaleRatio = _autoScaleWithBox ? (transform.lossyScale.x / 9.88f) : 1f;
-            if (scaleRatio <= 0.001f) scaleRatio = 1f;
-            Vector3 finalScale = Vector3.one * (scaleRatio * _previewScaleMultiplier);
+            float targetScale = GetTargetScrewWorldScale();
+            Vector3 finalScale = Vector3.one * targetScale;
 
             Color baseCol = _useBoxColorForPreview ? _boxColor.ToUnityColor() : _customPreviewColor;
             Color ghostColor = isSelected 
@@ -305,7 +314,7 @@ namespace ScrewSolver.Gameplay.Boxes
 
                 // Soketin tam merkezini gösteren küçük zarif işaretleyici
                 Gizmos.color = isSelected ? new Color(0.2f, 1f, 0.4f, 0.8f) : new Color(0.5f, 0.5f, 0.5f, 0.4f);
-                Gizmos.DrawWireSphere(socket.position, 0.005f * scaleRatio);
+                Gizmos.DrawWireSphere(socket.position, 0.005f * targetScale);
             }
         }
 

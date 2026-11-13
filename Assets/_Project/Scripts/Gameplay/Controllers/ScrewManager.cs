@@ -330,6 +330,7 @@ namespace ScrewSolver.Gameplay.Controllers
             Transform socket = targetBox.ReserveSocket();
             Vector3 destination = socket != null ? socket.position : targetBox.transform.position;
             Quaternion targetRotation = socket != null ? socket.rotation : targetBox.transform.rotation;
+            Vector3 targetWorldScale = Vector3.one * targetBox.GetTargetScrewWorldScale();
 
             screw.PlayUnscrewAndFlyAnimation(destination, targetRotation, () =>
             {
@@ -347,7 +348,7 @@ namespace ScrewSolver.Gameplay.Controllers
                 }
 
                 targetBox.OnScrewLanded();
-            });
+            }, targetWorldScale);
 
             Debug.Log($"<color=#{ColorUtility.ToHtmlStringRGB(screw.Color.ToUnityColor())}><b>[{screw.Color}]</b> Vida havalandı ve kendi renk kutusuna uçuyor!</color>");
         }

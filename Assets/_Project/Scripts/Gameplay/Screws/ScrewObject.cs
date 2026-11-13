@@ -18,6 +18,8 @@ namespace ScrewSolver.Gameplay.Screws
     public sealed class ScrewObject : MonoBehaviour
     {
         private static readonly int BaseColorPropertyId = Shader.PropertyToID("_BaseColor");
+        private static readonly int SmoothnessPropertyId = Shader.PropertyToID("_Smoothness");
+        private static readonly int MetallicPropertyId = Shader.PropertyToID("_Metallic");
 
         [Header("Color & Visuals")]
         [Tooltip("Vidanın bulmaca rengi")]
@@ -41,6 +43,12 @@ namespace ScrewSolver.Gameplay.Screws
         [Tooltip("Yıldız yarığının gölge koyuluk oranı (0.45 = %45 daha koyu ton)")]
         [SerializeField, Range(0.1f, 0.9f)] private float _shadowDarkness = 0.45f;
 
+        [Tooltip("Aşırı parlamayı engellemek için yüzey pürüzsüzlük/metalik değerlerini koddan sınırla")]
+        [SerializeField] private bool _overrideSurfaceFinish = true;
+
+        [SerializeField, Range(0f, 1f)] private float _smoothness = 0.22f;
+        [SerializeField, Range(0f, 1f)] private float _metallic = 0.08f;
+
         [Header("Plate Dependencies (Plaka Bağlantıları)")]
         [Tooltip("Bu vidanın tuttuğu ana plaka (vida sökülünce bu plakaya haber verilir)")]
         [SerializeField] private PlateObject _parentPlate;
@@ -60,9 +68,10 @@ namespace ScrewSolver.Gameplay.Screws
         private MaterialPropertyBlock _propBlock;
         private Sequence _activeSequence;
         private Tween _floatTween;
+        private static readonly Collider[] _blockerOverlapBuffer = new Collider[16];
 
         public ColorType Color => _color;
-        public bool IsBlocked => _blockingCount > 0;
+        public bool IsBlocked => IsPhysicallyBlocked();
         public bool IsUnscrewed => _isUnscrewed;
         public bool IsAnimating => _isAnimating;
         public bool IsSelected => _isSelected;
@@ -154,6 +163,39 @@ namespace ScrewSolver.Gameplay.Screws
         }
 
         /// <summary>
+        /// Vidanın başlığının önünde fiziksel olarak üstünü kapatan bir tahta veya engel olup olmadığını kontrol eder.
+        /// Üstünde fiziksel bir engel yoksa vida serbestçe sökülebilir (yanlış sökme kararı oyuncuya aittir).
+        /// </summary>
+        private bool IsPhysicallyBlocked()
+        {
+            float scaleZ = Mathf.Max(0.01f, transform.lossyScale.z);
+            float scaleX = Mathf.Max(0.01f, transform.lossyScale.x);
+
+            Vector3 p0 = transform.position + transform.forward * (0.145f * scaleZ);
+            Vector3 p1 = transform.position + transform.forward * (0.45f * scaleZ);
+            float radius = 0.025f * scaleX;
+
+            int count = Physics.OverlapCapsuleNonAlloc(p0, p1, radius, _blockerOverlapBuffer, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                Collider col = _blockerOverlapBuffer[i];
+                if (col == null) continue;
+
+                if (col.GetComponentInParent<ScrewObject>() != null) continue;
+                if (col.GetComponentInParent<PuzzleHole>() != null) continue;
+
+                PlateObject hitPlate = col.GetComponentInParent<PlateObject>();
+                if (_parentPlate != null && hitPlate == _parentPlate) continue;
+                if (hitPlate != null && hitPlate.HasFallen) continue;
+                if (_parentPlate == null && transform.parent != null && col.transform == transform.parent) continue;
+
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Plays a fast, juicy wiggle/shake animation when the player taps a blocked screw.
         /// </summary>
         public void PlayWiggleLockedAnimation()
@@ -176,10 +218,10 @@ namespace ScrewSolver.Gameplay.Screws
         /// </summary>
         public void PlayUnscrewAndFlyAnimation(Vector3 targetWorldPosition, Action onComplete = null)
         {
-            PlayUnscrewAndFlyAnimation(targetWorldPosition, transform.rotation, onComplete);
+            PlayUnscrewAndFlyAnimation(targetWorldPosition, transform.rotation, onComplete, null);
         }
 
-        public void PlayUnscrewAndFlyAnimation(Vector3 targetWorldPosition, Quaternion targetWorldRotation, Action onComplete = null)
+        public void PlayUnscrewAndFlyAnimation(Vector3 targetWorldPosition, Quaternion targetWorldRotation, Action onComplete = null, Vector3? targetWorldScale = null)
         {
             if (_isUnscrewed) return;
 
@@ -237,7 +279,7 @@ namespace ScrewSolver.Gameplay.Screws
                 }
             });
 
-            // 2. Flight phase: Objenin içinden geçmeden, yüzeyden dışarı ve yukarı doğru tatlı bir kavisle hedefe uçuş
+            // 2. Flight phase: Objenin içinden geçmeden, kamera yönüne doğru açılıp kutunun ÖNÜNDEN hedefe iniş
             float yDiff = targetWorldPosition.y - liftPosition.y;
             float arcHeight = rawArc;
             if (yDiff > 0f)
@@ -245,12 +287,27 @@ namespace ScrewSolver.Gameplay.Screws
                 arcHeight = Mathf.Min(rawArc, Mathf.Max(0.12f, yDiff * 0.30f));
             }
 
-            Vector3 midPoint = Vector3.Lerp(liftPosition, targetWorldPosition, 0.40f);
-            midPoint += surfaceNormal * 0.25f + Vector3.up * arcHeight;
+            Camera mainCam = Camera.main;
+            Vector3 toCameraDir = mainCam != null ? -mainCam.transform.forward : Vector3.back;
+            Vector3 boxFrontDir = (targetWorldRotation * Vector3.forward).normalized;
+            if (Vector3.Dot(boxFrontDir, toCameraDir) < 0f)
+            {
+                boxFrontDir = toCameraDir;
+            }
 
-            Vector3[] flightPath = new Vector3[] { midPoint, targetWorldPosition };
+            Vector3 midPoint = Vector3.Lerp(liftPosition, targetWorldPosition, 0.45f);
+            midPoint += surfaceNormal * 0.25f + toCameraDir * 0.45f + Vector3.up * (arcHeight * 0.6f);
+
+            // Kutunun tam ön yüzünde yaklaşma noktası (arkadan değil, doğrudan önden girsin)
+            Vector3 approachPoint = targetWorldPosition + boxFrontDir * 0.45f;
+
+            Vector3[] flightPath = new Vector3[] { midPoint, approachPoint, targetWorldPosition };
             _activeSequence.Append(transform.DOPath(flightPath, flyTime, PathType.CatmullRom).SetEase(Ease.InOutQuad));
             _activeSequence.Join(transform.DORotateQuaternion(targetWorldRotation, flyTime).SetEase(Ease.OutQuad));
+            if (targetWorldScale.HasValue)
+            {
+                _activeSequence.Join(transform.DOScale(targetWorldScale.Value, flyTime).SetEase(Ease.OutQuad));
+            }
 
             // 3. Arrival
             _activeSequence.OnComplete(() =>
@@ -491,6 +548,11 @@ namespace ScrewSolver.Gameplay.Screws
                     _meshRenderer.GetPropertyBlock(_propBlock, i);
                     UnityEngine.Color targetColor = (i == _crossSlotMaterialIndex) ? shadowColor : mainColor;
                     _propBlock.SetColor(BaseColorPropertyId, targetColor);
+                    if (_overrideSurfaceFinish)
+                    {
+                        _propBlock.SetFloat(SmoothnessPropertyId, _smoothness);
+                        _propBlock.SetFloat(MetallicPropertyId, _metallic);
+                    }
                     _meshRenderer.SetPropertyBlock(_propBlock, i);
                 }
             }
@@ -498,6 +560,11 @@ namespace ScrewSolver.Gameplay.Screws
             {
                 _meshRenderer.GetPropertyBlock(_propBlock);
                 _propBlock.SetColor(BaseColorPropertyId, mainColor);
+                if (_overrideSurfaceFinish)
+                {
+                    _propBlock.SetFloat(SmoothnessPropertyId, _smoothness);
+                    _propBlock.SetFloat(MetallicPropertyId, _metallic);
+                }
                 _meshRenderer.SetPropertyBlock(_propBlock);
             }
         }

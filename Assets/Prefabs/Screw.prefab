@@ -223,6 +223,9 @@ MonoBehaviour:
   _autoDarkenCrossSlot: 1
   _crossSlotMaterialIndex: 1
   _shadowDarkness: 0.45
+  _overrideSurfaceFinish: 1
+  _smoothness: 0.22
+  _metallic: 0.08
   _parentPlate: {fileID: 0}
   _blockingPlates: []
   _blockingCount: 0

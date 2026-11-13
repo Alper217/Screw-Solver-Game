@@ -34,6 +34,8 @@ namespace ScrewSolver.UI
         [SerializeField] private GameObject _victoryPanel;
         [SerializeField] private CanvasGroup _victoryCanvasGroup;
         [SerializeField] private Transform _victoryCard;
+        [SerializeField] private Transform _victoryRibbon;
+        [SerializeField] private Transform _victoryTrophyBadge;
         [SerializeField] private List<Image> _victoryStars = new();
         [SerializeField] private Text _victoryTitleText;
         [SerializeField] private Text _victoryScoreText;
@@ -43,9 +45,19 @@ namespace ScrewSolver.UI
         [SerializeField] private GameObject _defeatPanel;
         [SerializeField] private CanvasGroup _defeatCanvasGroup;
         [SerializeField] private Transform _defeatCard;
+        [SerializeField] private Transform _defeatRibbon;
+        [SerializeField] private Transform _defeatCenterBadge;
         [SerializeField] private Text _defeatTitleText;
         [SerializeField] private Text _defeatReasonText;
         [SerializeField] private Button _retryButton;
+
+        [Header("Cartoon FX Remaster (Win / Lose VFX)")]
+        [SerializeField] private GameObject _victoryFireworkVfxPrefab;
+        [SerializeField] private GameObject _victoryStarsVfxPrefab;
+        [SerializeField] private GameObject _victorySparkleVfxPrefab;
+        [SerializeField] private GameObject _defeatBrokenHeartVfxPrefab;
+        [SerializeField] private GameObject _defeatSmokeVfxPrefab;
+        [SerializeField] private float _vfxSpawnDistance = 6f;
 
         public event Action OnNextLevelRequested;
         public event Action OnRetryRequested;
@@ -53,6 +65,11 @@ namespace ScrewSolver.UI
         private float _timeRemaining;
         private bool _isTimerRunning;
         private bool _isGameEnded;
+        private bool _hasSavedPlaneDistance;
+        private float _savedPlaneDistance = 100f;
+        private bool _pendingWinShortcut;
+        private bool _pendingLoseShortcut;
+        private readonly List<GameObject> _activeVfxInstances = new();
 
         public float TimeRemaining => _timeRemaining;
         public bool IsGameEnded => _isGameEnded;
@@ -69,9 +86,12 @@ namespace ScrewSolver.UI
             if (_waitingSlotManager == null) _waitingSlotManager = FindFirstObjectByType<WaitingSlotManager>();
 
             Canvas canvas = GetComponent<Canvas>();
-            if (canvas == null) canvas = gameObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 999;
+            if (canvas == null)
+            {
+                canvas = gameObject.AddComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                canvas.sortingOrder = 999;
+            }
 
             CanvasScaler scaler = GetComponent<CanvasScaler>();
             if (scaler == null)
@@ -102,10 +122,17 @@ namespace ScrewSolver.UI
                 if (_victoryCard == null) _victoryCard = _victoryPanel.transform.Find("VictoryCard");
                 if (_victoryCard != null)
                 {
+                    if (_victoryRibbon == null)
+                        _victoryRibbon = _victoryCard.Find("RibbonBanner");
+                    if (_victoryTrophyBadge == null)
+                        _victoryTrophyBadge = _victoryCard.Find("RewardInset/TrophyIcon");
                     if (_victoryTitleText == null)
-                        _victoryTitleText = _victoryCard.Find("Title")?.GetComponent<Text>() ?? _victoryCard.Find("TitleText")?.GetComponent<Text>();
+                        _victoryTitleText = _victoryCard.Find("RibbonBanner/Title")?.GetComponent<Text>()
+                            ?? _victoryCard.Find("Title")?.GetComponent<Text>()
+                            ?? _victoryCard.Find("TitleText")?.GetComponent<Text>();
                     if (_victoryScoreText == null)
-                        _victoryScoreText = _victoryCard.Find("ScoreText")?.GetComponent<Text>();
+                        _victoryScoreText = _victoryCard.Find("RewardInset/ScoreText")?.GetComponent<Text>()
+                            ?? _victoryCard.Find("ScoreText")?.GetComponent<Text>();
                     if (_nextLevelButton == null)
                         _nextLevelButton = _victoryCard.Find("NextLevelButton")?.GetComponent<Button>();
 
@@ -116,7 +143,9 @@ namespace ScrewSolver.UI
                         {
                             for (int i = 0; i < starContainer.childCount; i++)
                             {
-                                Image img = starContainer.GetChild(i).GetComponent<Image>();
+                                Transform child = starContainer.GetChild(i);
+                                Transform starChild = child.Find($"Star_{i + 1}");
+                                Image img = starChild != null ? starChild.GetComponent<Image>() : child.GetComponent<Image>();
                                 if (img != null) _victoryStars.Add(img);
                             }
                         }
@@ -136,11 +165,19 @@ namespace ScrewSolver.UI
                 if (_defeatCard == null) _defeatCard = _defeatPanel.transform.Find("DefeatCard");
                 if (_defeatCard != null)
                 {
-                    if (_defeatTitleText == null) 
-                        _defeatTitleText = _defeatCard.Find("Title")?.GetComponent<Text>() ?? _defeatCard.Find("TitleText")?.GetComponent<Text>();
-                    if (_defeatReasonText == null) 
-                        _defeatReasonText = _defeatCard.Find("Reason")?.GetComponent<Text>() ?? _defeatCard.Find("ReasonText")?.GetComponent<Text>();
-                    if (_retryButton == null) 
+                    if (_defeatRibbon == null)
+                        _defeatRibbon = _defeatCard.Find("RibbonBanner");
+                    if (_defeatCenterBadge == null)
+                        _defeatCenterBadge = _defeatCard.Find("FailBadge");
+                    if (_defeatTitleText == null)
+                        _defeatTitleText = _defeatCard.Find("RibbonBanner/Title")?.GetComponent<Text>()
+                            ?? _defeatCard.Find("Title")?.GetComponent<Text>()
+                            ?? _defeatCard.Find("TitleText")?.GetComponent<Text>();
+                    if (_defeatReasonText == null)
+                        _defeatReasonText = _defeatCard.Find("ReasonInset/Reason")?.GetComponent<Text>()
+                            ?? _defeatCard.Find("Reason")?.GetComponent<Text>()
+                            ?? _defeatCard.Find("ReasonText")?.GetComponent<Text>();
+                    if (_retryButton == null)
                         _retryButton = _defeatCard.Find("RetryButton")?.GetComponent<Button>();
                 }
             }
@@ -318,10 +355,23 @@ namespace ScrewSolver.UI
             {
                 _waitingSlotManager.OnGameOver += HandleSlotsGameOver;
             }
+
+#if ENABLE_INPUT_SYSTEM
+            if (UnityEngine.InputSystem.Keyboard.current != null)
+            {
+                UnityEngine.InputSystem.Keyboard.current.onTextInput += HandleTextInput;
+            }
+#endif
         }
 
         private void OnDisable()
         {
+#if ENABLE_INPUT_SYSTEM
+            if (UnityEngine.InputSystem.Keyboard.current != null)
+            {
+                UnityEngine.InputSystem.Keyboard.current.onTextInput -= HandleTextInput;
+            }
+#endif
             if (_screwManager != null)
             {
                 _screwManager.OnLevelCompleted -= HandleLevelCompleted;
@@ -347,6 +397,8 @@ namespace ScrewSolver.UI
 
         private void Update()
         {
+            HandleDebugShortcuts();
+
             if (!_enableTimer || !_isTimerRunning || _isGameEnded) return;
 
             _timeRemaining -= Time.deltaTime;
@@ -357,6 +409,43 @@ namespace ScrewSolver.UI
                 _timeRemaining = 0f;
                 _isTimerRunning = false;
                 HandleTimeOutGameOver();
+            }
+        }
+
+        private void HandleTextInput(char ch)
+        {
+            if (ch == 'ğ' || ch == 'Ğ') _pendingWinShortcut = true;
+            else if (ch == 'ü' || ch == 'Ü') _pendingLoseShortcut = true;
+        }
+
+        private void HandleDebugShortcuts()
+        {
+            bool winPressed = _pendingWinShortcut;
+            bool losePressed = _pendingLoseShortcut;
+            _pendingWinShortcut = false;
+            _pendingLoseShortcut = false;
+
+#if ENABLE_INPUT_SYSTEM
+            if (UnityEngine.InputSystem.Keyboard.current != null)
+            {
+                if (UnityEngine.InputSystem.Keyboard.current.leftBracketKey.wasPressedThisFrame) winPressed = true;
+                if (UnityEngine.InputSystem.Keyboard.current.rightBracketKey.wasPressedThisFrame) losePressed = true;
+            }
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+            if (Input.GetKeyDown(KeyCode.LeftBracket)) winPressed = true;
+            if (Input.GetKeyDown(KeyCode.RightBracket)) losePressed = true;
+#endif
+
+            if (winPressed)
+            {
+                HideAllPopupsImmediately();
+                ShowVictoryPopup();
+            }
+            else if (losePressed)
+            {
+                HideAllPopupsImmediately();
+                ShowDefeatPopup("TRY AGAIN!", "No valid moves left!\nTry a different order next time.");
             }
         }
 
@@ -452,38 +541,68 @@ namespace ScrewSolver.UI
 
             _isGameEnded = true;
             _isTimerRunning = false;
+            ClearActiveVfx();
+            BringCanvasForwardForPopup();
 
             _victoryPanel.SetActive(true);
             if (_defeatPanel != null) _defeatPanel.SetActive(false);
 
-            // Arka planı yumuşakça soldur
+            if (_victoryScoreText != null)
+            {
+                int bonus = Mathf.Max(50, Mathf.RoundToInt(_timeRemaining * 2f));
+                _victoryScoreText.text = $"TIME BONUS +{bonus}";
+            }
+
+            // Arka plan yumuşakça belirsin
             if (_victoryCanvasGroup != null)
             {
-                _victoryCanvasGroup.alpha = 1f;
+                _victoryCanvasGroup.alpha = 0f;
+                _victoryCanvasGroup.DOFade(1f, 0.25f).SetUpdate(true);
                 _victoryCanvasGroup.blocksRaycasts = true;
                 _victoryCanvasGroup.interactable = true;
             }
 
-            // Kart zıplayarak açılsın
+            // Kart zıplayarak açılsın (Royal Match / Peak tarzı)
             if (_victoryCard != null)
             {
-                _victoryCard.localScale = Vector3.one * 0.4f;
+                _victoryCard.DOKill();
+                _victoryCard.localScale = Vector3.one * 0.45f;
                 _victoryCard.DOScale(Vector3.one, 0.45f).SetEase(Ease.OutBack).SetUpdate(true);
             }
+
+            // Üst kurdele pankartı gecikmeli vursun
+            if (_victoryRibbon != null)
+            {
+                _victoryRibbon.DOKill();
+                _victoryRibbon.localScale = Vector3.one * 0.6f;
+                _victoryRibbon.DOScale(Vector3.one, 0.42f).SetEase(Ease.OutBack).SetDelay(0.12f).SetUpdate(true);
+            }
+
+            // Kupa rozeti tatlı yaylansın
+            if (_victoryTrophyBadge != null)
+            {
+                _victoryTrophyBadge.DOKill();
+                _victoryTrophyBadge.localScale = Vector3.zero;
+                _victoryTrophyBadge.DOScale(Vector3.one, 0.42f).SetEase(Ease.OutBack).SetDelay(0.50f).SetUpdate(true);
+            }
+
+            // Cartoon FX Remaster zafer efektlerini patlat
+            SpawnVictoryVfx();
 
             // Yıldızları sırayla patlat (3 Yıldız Animasyonu)
             StartCoroutine(AnimateStarsRoutine());
 
             if (_nextLevelButton != null)
             {
+                _nextLevelButton.transform.DOKill();
                 _nextLevelButton.transform.localScale = Vector3.zero;
-                _nextLevelButton.transform.DOScale(Vector3.one, 0.4f)
+                _nextLevelButton.transform.DOScale(Vector3.one, 0.42f)
                     .SetEase(Ease.OutBack)
-                    .SetDelay(0.7f)
+                    .SetDelay(0.75f)
                     .SetUpdate(true)
                     .OnComplete(() =>
                     {
-                        _nextLevelButton.transform.DOPunchScale(Vector3.one * 0.08f, 1.2f, 2, 0.5f)
+                        _nextLevelButton.transform.DOPunchScale(Vector3.one * 0.06f, 1.3f, 2, 0.5f)
                             .SetLoops(-1, LoopType.Restart)
                             .SetUpdate(true);
                     });
@@ -492,22 +611,24 @@ namespace ScrewSolver.UI
 
         private IEnumerator AnimateStarsRoutine()
         {
-            // Yıldızları sıfırla
             for (int i = 0; i < _victoryStars.Count; i++)
             {
                 if (_victoryStars[i] != null)
                 {
+                    _victoryStars[i].transform.DOKill();
                     _victoryStars[i].transform.localScale = Vector3.zero;
                 }
             }
 
-            yield return new WaitForSecondsRealtime(0.35f);
+            yield return new WaitForSecondsRealtime(0.28f);
 
             for (int i = 0; i < _victoryStars.Count; i++)
             {
                 if (_victoryStars[i] != null)
                 {
-                    _victoryStars[i].transform.DOScale(Vector3.one, 0.30f).SetEase(Ease.OutBack).SetUpdate(true);
+                    Transform starTr = _victoryStars[i].transform;
+                    starTr.DOScale(Vector3.one, 0.34f).SetEase(Ease.OutBack).SetUpdate(true);
+                    starTr.DOPunchRotation(new Vector3(0f, 0f, (i % 2 == 0 ? 12f : -12f)), 0.36f, 6, 0.6f).SetUpdate(true);
                     yield return new WaitForSecondsRealtime(0.18f);
                 }
             }
@@ -530,6 +651,8 @@ namespace ScrewSolver.UI
 
             _isGameEnded = true;
             _isTimerRunning = false;
+            ClearActiveVfx();
+            BringCanvasForwardForPopup();
 
             _defeatPanel.SetActive(true);
             if (_victoryPanel != null) _victoryPanel.SetActive(false);
@@ -537,43 +660,235 @@ namespace ScrewSolver.UI
             if (_defeatTitleText != null) _defeatTitleText.text = title;
             if (_defeatReasonText != null) _defeatReasonText.text = reason;
 
+            // VFX pozisyonunu kart animasyon için küçültülmeden önce gerçek (1x) rozet konumundan oku
+            if (_defeatCard != null) _defeatCard.localScale = Vector3.one;
+            if (_defeatCenterBadge != null) _defeatCenterBadge.localScale = Vector3.one;
+            Canvas.ForceUpdateCanvases();
+            SpawnDefeatVfx();
+
             if (_defeatCanvasGroup != null)
             {
-                _defeatCanvasGroup.alpha = 1f;
+                _defeatCanvasGroup.alpha = 0f;
+                _defeatCanvasGroup.DOFade(1f, 0.25f).SetUpdate(true);
                 _defeatCanvasGroup.blocksRaycasts = true;
                 _defeatCanvasGroup.interactable = true;
             }
 
             if (_defeatCard != null)
             {
-                _defeatCard.localScale = Vector3.one * 0.4f;
-                _defeatCard.DOScale(Vector3.one, 0.45f).SetEase(Ease.OutBack).SetUpdate(true);
+                _defeatCard.DOKill();
+                _defeatCard.localScale = Vector3.one * 0.45f;
+                _defeatCard.DOScale(Vector3.one, 0.42f).SetEase(Ease.OutBack).SetUpdate(true);
+            }
+
+            if (_defeatRibbon != null)
+            {
+                _defeatRibbon.DOKill();
+                _defeatRibbon.localScale = Vector3.one * 0.6f;
+                _defeatRibbon.DOScale(Vector3.one, 0.40f).SetEase(Ease.OutBack).SetDelay(0.10f).SetUpdate(true);
+            }
+
+            if (_defeatCenterBadge != null)
+            {
+                _defeatCenterBadge.DOKill();
+                _defeatCenterBadge.localScale = Vector3.zero;
+                _defeatCenterBadge.DOScale(Vector3.one, 0.38f)
+                    .SetEase(Ease.OutBack)
+                    .SetDelay(0.22f)
+                    .SetUpdate(true)
+                    .OnComplete(() =>
+                    {
+                        _defeatCenterBadge.DOShakeRotation(0.45f, new Vector3(0f, 0f, 14f), 10, 90f).SetUpdate(true);
+                    });
             }
 
             if (_retryButton != null)
             {
+                _retryButton.transform.DOKill();
                 _retryButton.transform.localScale = Vector3.zero;
                 _retryButton.transform.DOScale(Vector3.one, 0.4f)
                     .SetEase(Ease.OutBack)
-                    .SetDelay(0.35f)
+                    .SetDelay(0.38f)
                     .SetUpdate(true)
                     .OnComplete(() =>
                     {
-                        _retryButton.transform.DOPunchScale(Vector3.one * 0.08f, 1.2f, 2, 0.5f)
+                        _retryButton.transform.DOPunchScale(Vector3.one * 0.06f, 1.3f, 2, 0.5f)
                             .SetLoops(-1, LoopType.Restart)
                             .SetUpdate(true);
                     });
             }
         }
 
+        private void SpawnVictoryVfx()
+        {
+            SpawnPopupVfx(_victoryFireworkVfxPrefab, new Vector2(-0.95f, 1.15f), 0.70f, 4.5f);
+            SpawnPopupVfx(_victoryFireworkVfxPrefab, new Vector2(0.95f, 0.95f), 0.70f, 4.5f);
+            SpawnPopupVfx(_victoryStarsVfxPrefab, new Vector2(0f, 1.45f), 0.80f, 4.5f);
+            SpawnPopupVfx(_victorySparkleVfxPrefab, new Vector2(-0.55f, -0.18f), 0.35f, 2.0f, 0.32f);
+        }
+
+        private void SpawnDefeatVfx()
+        {
+            RectTransform badgeRect = _defeatCenterBadge as RectTransform;
+            SpawnPopupVfx(_defeatBrokenHeartVfxPrefab, new Vector2(0f, -0.02f), 0.25f, 4.0f, 1f, badgeRect);
+            SpawnPopupVfx(_defeatSmokeVfxPrefab, new Vector2(0f, -0.04f), 0.28f, 4.0f, 1f, badgeRect);
+        }
+
+        private void SpawnPopupVfx(GameObject prefab, Vector2 cameraViewOffset, float baseScale, float autoDestroySeconds, float alphaMultiplier = 1f, RectTransform uiAnchor = null)
+        {
+            if (prefab == null) return;
+            Camera cam = Camera.main;
+            if (cam == null) return;
+
+            Canvas canvas = GetComponent<Canvas>();
+            float dist = _vfxSpawnDistance;
+            if (canvas != null && canvas.renderMode == RenderMode.ScreenSpaceCamera && canvas.planeDistance > 0.5f)
+            {
+                dist = Mathf.Min(_vfxSpawnDistance, canvas.planeDistance * 0.55f);
+            }
+
+            float scaleFactor = (dist / 6f) * baseScale;
+            Vector3 worldPos;
+            if (uiAnchor != null)
+            {
+                Camera uiCam = (canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay)
+                    ? (canvas.worldCamera != null ? canvas.worldCamera : cam)
+                    : null;
+                Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(uiCam, uiAnchor.position);
+                worldPos = cam.ScreenToWorldPoint(new Vector3(screenPoint.x, screenPoint.y, dist))
+                    + cam.transform.right * (cameraViewOffset.x * (dist / 6f))
+                    + cam.transform.up * (cameraViewOffset.y * (dist / 6f));
+            }
+            else
+            {
+                worldPos = cam.transform.position
+                    + cam.transform.forward * dist
+                    + cam.transform.right * (cameraViewOffset.x * (dist / 6f))
+                    + cam.transform.up * (cameraViewOffset.y * (dist / 6f));
+            }
+
+            GameObject instance = Instantiate(prefab, worldPos, Quaternion.LookRotation(-cam.transform.forward, cam.transform.up));
+            instance.transform.localScale = Vector3.one * scaleFactor;
+
+            // ScreenSpaceCamera modunda kamera sallanması UI kenarlarında mavi boşluk/kayma yaratacağı için CFXR kamera sarsıntısını kapat
+            CartoonFX.CFXR_Effect[] cfxrEffects = instance.GetComponentsInChildren<CartoonFX.CFXR_Effect>(true);
+            for (int i = 0; i < cfxrEffects.Length; i++)
+            {
+                if (cfxrEffects[i] != null && cfxrEffects[i].cameraShake != null)
+                {
+                    cfxrEffects[i].cameraShake.StopShake();
+                    cfxrEffects[i].cameraShake.enabled = false;
+                }
+            }
+
+            // Alt partiküllerin ebeveyn ölçeğine (scaleFactor) tam uyması için Hierarchy ölçekleme + opsiyonel parlaklık azaltma
+            ParticleSystem[] systems = instance.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null) continue;
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                var main = ps.main;
+                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                if (alphaMultiplier < 0.99f)
+                {
+                    var sc = main.startColor;
+                    if (sc.mode == ParticleSystemGradientMode.Color)
+                    {
+                        Color c = sc.color;
+                        c.a *= alphaMultiplier;
+                        sc.color = c;
+                        main.startColor = sc;
+                    }
+                    else if (sc.mode == ParticleSystemGradientMode.TwoColors)
+                    {
+                        Color cMin = sc.colorMin; cMin.a *= alphaMultiplier; sc.colorMin = cMin;
+                        Color cMax = sc.colorMax; cMax.a *= alphaMultiplier; sc.colorMax = cMax;
+                        main.startColor = sc;
+                    }
+                }
+            }
+            for (int i = 0; i < systems.Length; i++)
+            {
+                if (systems[i] != null && systems[i].main.playOnAwake)
+                {
+                    systems[i].Play(false);
+                }
+            }
+
+            // Tüm alt partiküllerin Canvas'ın önünde çizilmesi için sortingOrder ve sortingFudge'ı zorla
+            int targetSortingLayer = canvas != null ? canvas.sortingLayerID : 0;
+            int targetSortingOrder = (canvas != null ? canvas.sortingOrder : 0) + 50;
+            ParticleSystemRenderer[] psRenderers = instance.GetComponentsInChildren<ParticleSystemRenderer>(true);
+            for (int i = 0; i < psRenderers.Length; i++)
+            {
+                if (psRenderers[i] != null)
+                {
+                    psRenderers[i].sortingLayerID = targetSortingLayer;
+                    psRenderers[i].sortingOrder = targetSortingOrder;
+                    psRenderers[i].sortingFudge = -5f;
+                }
+            }
+
+            _activeVfxInstances.Add(instance);
+
+            if (autoDestroySeconds > 0f)
+            {
+                Destroy(instance, autoDestroySeconds);
+            }
+        }
+
+        private void ClearActiveVfx()
+        {
+            for (int i = _activeVfxInstances.Count - 1; i >= 0; i--)
+            {
+                if (_activeVfxInstances[i] != null)
+                {
+                    Destroy(_activeVfxInstances[i]);
+                }
+            }
+            _activeVfxInstances.Clear();
+        }
+
+        private void BringCanvasForwardForPopup()
+        {
+            Canvas canvas = GetComponent<Canvas>();
+            if (canvas == null || canvas.renderMode != RenderMode.ScreenSpaceCamera) return;
+
+            if (!_hasSavedPlaneDistance)
+            {
+                _savedPlaneDistance = canvas.planeDistance;
+                _hasSavedPlaneDistance = true;
+            }
+            if (canvas.planeDistance > 2.2f)
+            {
+                canvas.planeDistance = 2.0f;
+            }
+        }
+
+        private void RestoreCanvasPlaneDistance()
+        {
+            if (!_hasSavedPlaneDistance) return;
+            Canvas canvas = GetComponent<Canvas>();
+            if (canvas != null && canvas.renderMode == RenderMode.ScreenSpaceCamera)
+            {
+                canvas.planeDistance = _savedPlaneDistance;
+            }
+            _hasSavedPlaneDistance = false;
+        }
+
         public void HideAllPopupsImmediately()
         {
+            ClearActiveVfx();
+            RestoreCanvasPlaneDistance();
             if (_victoryPanel != null) _victoryPanel.SetActive(false);
             if (_defeatPanel != null) _defeatPanel.SetActive(false);
         }
 
         private void HandleNextLevelClicked()
         {
+            ClearActiveVfx();
+            RestoreCanvasPlaneDistance();
             Debug.Log("<color=#00e5ff><b>[GameUI]</b> Next Level tıklandı!</color>");
             if (OnNextLevelRequested != null)
             {
@@ -587,6 +902,8 @@ namespace ScrewSolver.UI
 
         private void HandleRetryClicked()
         {
+            ClearActiveVfx();
+            RestoreCanvasPlaneDistance();
             Debug.Log("<color=#ff9800><b>[GameUI]</b> Retry tıklandı!</color>");
             if (OnRetryRequested != null)
             {
@@ -605,10 +922,19 @@ namespace ScrewSolver.UI
 
         private void OnDestroy()
         {
+            ClearActiveVfx();
             if (_victoryCard != null) _victoryCard.DOKill();
+            if (_victoryRibbon != null) _victoryRibbon.DOKill();
+            if (_victoryTrophyBadge != null) _victoryTrophyBadge.DOKill();
             if (_defeatCard != null) _defeatCard.DOKill();
+            if (_defeatRibbon != null) _defeatRibbon.DOKill();
+            if (_defeatCenterBadge != null) _defeatCenterBadge.DOKill();
             if (_nextLevelButton != null) _nextLevelButton.transform.DOKill();
             if (_retryButton != null) _retryButton.transform.DOKill();
+            for (int i = 0; i < _victoryStars.Count; i++)
+            {
+                if (_victoryStars[i] != null) _victoryStars[i].transform.DOKill();
+            }
         }
     }
 }

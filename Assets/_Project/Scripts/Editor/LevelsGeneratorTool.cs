@@ -17,8 +17,9 @@ namespace ScrewSolver.Editor
     /// 8 Adet Tam Teşekküllü, Birbirinden Farklı 3D Mekanik Bulmaca Seviyesini
     /// (Küp, Silindir, Haç, Altıgen Kule, Piramit, Türbin, L-Blok, Master Kasa)
     /// Prefab olarak üreten ve LevelManager'a bağlayan otomatik seviye mimarı.
+    /// NOT: Şimdilik kullanıcı talebiyle devre dışı bırakıldı.
     /// </summary>
-    [InitializeOnLoad]
+    // [InitializeOnLoad] // İPTAL EDİLDİ: Otomatik seviye üretimi durduruldu
     public static class LevelsGeneratorTool
     {
         private const string LevelsFolder = "Assets/Prefabs/Levels";
@@ -27,6 +28,7 @@ namespace ScrewSolver.Editor
         private const string MaterialsFolder = "Assets/Materials";
         private const string AutoGenKey = "LevelsGenerator_AutoBuilt_v6";
 
+        /* İPTAL EDİLDİ: Editör açılışında otomatik seviye üretimi kapalı
         static LevelsGeneratorTool()
         {
             EditorApplication.delayCall += () =>
@@ -39,15 +41,19 @@ namespace ScrewSolver.Editor
                 }
             };
         }
+        */
 
-        [MenuItem("ScrewSolver/Seviye/8 Seviyeyi Otomatik Üret ve Kaydet %#l")]
+        [MenuItem("ScrewSolver/Seviye/8 Seviyeyi Otomatik Üret ve Kaydet (Devre Dışı) %#l")]
         public static void GenerateMenuCommand()
         {
-            GenerateAllLevels(silent: false);
+            EditorUtility.DisplayDialog("Devre Dışı", "Level Generator şimdilik kod üzerinden iptal edilmiştir.", "Tamam");
         }
 
         public static void GenerateAllLevels(bool silent = false)
         {
+            Debug.Log("[LevelsGeneratorTool] Level Generator şimdilik devre dışı bırakıldığı için çalıştırılmadı.");
+            return;
+#pragma warning disable CS0162
             if (EditorApplication.isPlayingOrWillChangePlaymode || Application.isPlaying)
             {
                 if (!silent) EditorUtility.DisplayDialog("Uyarı", "Lütfen oyun modundan çıkıp tekrar deneyin.", "Tamam");
@@ -199,6 +205,7 @@ namespace ScrewSolver.Editor
                     "Her seviyedeki vida renkleri tam 4'ün katıdır (0 artık vida, %100 kusursuz kutu akışı). " +
                     "Kalan +2 seviyeyi de istediğiniz gibi ekleyebilirsiniz!", "Harika!");
             }
+#pragma warning restore CS0162
         }
 
         private static GameObject BuildAndSaveLevel(GameObject tempRoot, string levelName, System.Action<GameObject> buildAction)

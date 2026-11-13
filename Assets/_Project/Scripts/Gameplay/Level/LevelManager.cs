@@ -58,6 +58,10 @@ namespace ScrewSolver.Gameplay.Level
             if (_gameUI == null) _gameUI = FindFirstObjectByType<GameUIController>();
 
 #if UNITY_EDITOR
+            if (_levelPrefabs != null)
+            {
+                _levelPrefabs.RemoveAll(p => p == null);
+            }
             if (_levelPrefabs == null || _levelPrefabs.Count == 0)
             {
                 _levelPrefabs = new List<GameObject>();
